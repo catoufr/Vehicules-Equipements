@@ -1,5 +1,5 @@
 {
-  "id": "/Vehicules-Equipements/",
+  "id": "/Vehicules-Equipements/?app=vehicules",
   "name": "Suivi véhicules & équipements",
   "short_name": "Véhicules",
   "description": "Consommation, dépenses et entretien de mes véhicules et équipements",
@@ -11,7 +11,23 @@
   "theme_color": "#1f6f78",
   "lang": "fr",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
