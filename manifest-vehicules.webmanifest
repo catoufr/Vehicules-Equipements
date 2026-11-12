@@ -1,9 +1,9 @@
 {
-  "id": "/Vehicules-Equipements/?app=vehicules",
+  "id": "/Vehicules-Equipements/?app=suivi-vehicules-equipements",
   "name": "Suivi véhicules & équipements",
   "short_name": "Véhicules",
   "description": "Consommation, dépenses et entretien de mes véhicules et équipements",
-  "start_url": "./",
+  "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
