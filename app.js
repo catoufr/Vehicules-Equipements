@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.2.0';
+var APP_VERSION = '0.3.0';
 var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -41,18 +41,19 @@ function toast(msg) {
 
 /* ---------- Base locale ---------- */
 var db = null;
-var data = { vehicles: [], readings: [], deleted: [], lastExport: null };
+var data = { vehicles: [], readings: [], fills: [], prices: [], deleted: [], lastExport: null };
 
 function openDB() {
   return new Promise(function (res, rej) {
-    var r = indexedDB.open(DB_NAME, 1);
+    var r = indexedDB.open(DB_NAME, 2);
     r.onupgradeneeded = function () {
-      var d = r.result;
-      d.createObjectStore('vehicles', { keyPath: 'id' });
-      var rd = d.createObjectStore('readings', { keyPath: 'id' });
-      rd.createIndex('vehicleId', 'vehicleId');
-      d.createObjectStore('deleted', { keyPath: 'id' }); // suppressions, pour la future synchro
-      d.createObjectStore('meta', { keyPath: 'key' });
+      var d = r.result, has = function (n) { return d.objectStoreNames.contains(n); };
+      if (!has('vehicles')) d.createObjectStore('vehicles', { keyPath: 'id' });
+      if (!has('readings')) { var rd = d.createObjectStore('readings', { keyPath: 'id' }); rd.createIndex('vehicleId', 'vehicleId'); }
+      if (!has('deleted')) d.createObjectStore('deleted', { keyPath: 'id' }); // suppressions, pour la synchro
+      if (!has('meta')) d.createObjectStore('meta', { keyPath: 'key' });
+      if (!has('fills')) d.createObjectStore('fills', { keyPath: 'id' });   // pleins (0.3)
+      if (!has('prices')) d.createObjectStore('prices', { keyPath: 'id' }); // prix moyens mensuels (0.3)
     };
     r.onsuccess = function () { res(r.result); };
     r.onerror = function () { rej(r.error); };
@@ -70,6 +71,8 @@ async function reload() {
   data.vehicles = await rq(st('vehicles').getAll());
   data.readings = await rq(st('readings').getAll());
   data.deleted = await rq(st('deleted').getAll());
+  data.fills = await rq(st('fills').getAll());
+  data.prices = await rq(st('prices').getAll());
   var m = await rq(st('meta').get('lastExport'));
   data.lastExport = m ? m.value : null;
 }
@@ -134,7 +137,7 @@ function render() {
   if (state.tab === 'home') html = viewHome();
   else if (state.tab === 'vehicles') html = viewVehicles();
   else if (state.tab === 'vehicle') html = viewVehicle(state.vehicleId);
-  else if (state.tab === 'energy') html = viewSoon('Énergie', 'Pleins, recharges, tarifs par période et indicateurs de consommation arrivent à l\'étape 0.3.');
+  else if (state.tab === 'energy') html = viewEnergy();
   else if (state.tab === 'maint') html = viewSoon('Entretiens', 'Le carnet d\'entretien, les prix détaillés et les factures jointes arrivent à l\'étape 0.4.');
   else if (state.tab === 'data') html = viewData();
   main.innerHTML = html;
@@ -156,13 +159,13 @@ function viewHome() {
   var h = '<h1>Suivi véhicules &amp; équipements</h1>';
   if (exportReminder()) {
     h += '<div class="card warn"><b>Pensez à sauvegarder.</b><div class="muted">Dernier export il y a plus de 30 jours (ou jamais). ' +
-      'Les données sont sur cet appareil seulement tant que la synchronisation (étape 0.2) n\'est pas là.</div>' +
+      'Pensez aussi à synchroniser avec Google Drive (onglet Données).</div>' +
       '<div class="actions"><button class="primary" data-act="tab" data-tab="data">Aller à Données</button></div></div>';
   }
   h += '<div class="grid2">' +
     '<button class="primary" data-act="addReading">＋ Kilométrage</button>' +
     '<button data-act="addVehicle">＋ Véhicule</button>' +
-    '<button disabled title="Étape 0.3">＋ Plein / recharge</button>' +
+    '<button data-act="addFill">＋ Plein</button>' +
     '<button disabled title="Étape 0.4">＋ Entretien</button></div>';
   var cur = sortedVehicles('actuel');
   h += '<h2>Mes véhicules</h2>';
@@ -222,7 +225,8 @@ function viewVehicle(id) {
     h += '<div class="item"><div><b>' + fmtKm(r.km) + '</b><div class="muted">' + fmtDate(r.date) + '</div></div>' +
       '<div><button class="link" data-act="editReading" data-id="' + esc(r.id) + '">Modifier</button></div></div>';
   });
-  h += '</div><h2>Zone sensible</h2><div class="actions"><button class="danger" data-act="delVehicle" data-id="' + esc(id) + '">Supprimer ce véhicule</button></div>';
+  h += '</div>' + energyVehicleSection(v);
+  h += '<h2>Zone sensible</h2><div class="actions"><button class="danger" data-act="delVehicle" data-id="' + esc(id) + '">Supprimer ce véhicule</button></div>';
   return h;
 }
 function viewSoon(title, text) {
@@ -249,6 +253,7 @@ function openSheet(html) { var s = $('#sheet'); s.innerHTML = '<div class="inner
 function closeSheet() { var s = $('#sheet'); s.hidden = true; s.innerHTML = ''; }
 
 var TYPES = ['Voiture', 'Utilitaire', 'Moto', 'Scooter', 'Camping-car', 'Remorque'];
+var FUELS = ['Gazole', 'SP95', 'SP95-E10', 'SP98', 'E85', 'GPL'];
 var ENERGIES = ['Essence', 'Diesel', 'Électrique', 'Hybride', 'Hybride rechargeable', 'GPL', 'E85 (superéthanol)'];
 function opts(list) { return list.map(function (o) { return '<option value="' + esc(o) + '">'; }).join(''); }
 function fld(label, name, val, o) {
@@ -286,6 +291,13 @@ function vehicleForm(id) {
     '<div class="actions"><button type="button" data-act="addExtra">＋ Ajouter un champ</button></div></fieldset>' +
     '<fieldset><legend>Identification (facultatif)</legend>' + fld('Plaque d\'immatriculation', 'plate', v.plate) + fld('VIN', 'vin', v.vin) +
     '<div class="muted">Ces données restent dans l\'appli, jamais dans le dépôt ni dans les documents du projet.</div></fieldset>' +
+    '<fieldset><legend>Suivi de la consommation</legend><label for="f_fuel">Carburant (pour la table des prix)</label><select id="f_fuel" name="fuel">' +
+    [''].concat(FUELS).map(function (o) { return '<option value="' + o + '"' + ((v.fuel || '') === o ? ' selected' : '') + '>' + (o || '— (selon l\'énergie)') + '</option>'; }).join('') + '</select>' +
+    '<label>Mode de suivi</label><div class="seg"><label><input type="radio" name="mode" value="fills"' + (v.mode !== 'manual' ? ' checked' : '') + '><span>Plein à plein</span></label>' +
+    '<label><input type="radio" name="mode" value="manual"' + (v.mode === 'manual' ? ' checked' : '') + '><span>Conso moyenne</span></label></div>' +
+    fld('Conso moyenne connue (L/100 km)', 'manualConso', v.manualConso, { inputmode: 'decimal', ph: 'ex. 6,5' }) +
+    fld('Prix moyen du litre si pas dans la table (€)', 'manualPrice', v.manualPrice, { inputmode: 'decimal', ph: 'ex. 1,75' }) +
+    '<div class="muted">Le mode « Conso moyenne » sert aux véhicules sans tickets : le coût est estimé à partir des kilomètres entre deux relevés.</div></fieldset>' +
     '<fieldset><legend>Achat</legend><label for="f_condition">Neuf ou occasion</label><select id="f_condition" name="condition">' +
     ['', 'Neuf', 'Occasion'].map(function (o) { return '<option value="' + o + '"' + (p.condition === o ? ' selected' : '') + '>' + (o || '—') + '</option>'; }).join('') + '</select>' +
     fld('Kilométrage à l\'achat (0 pour un neuf)', 'pkm', p.km, { inputmode: 'numeric' }) +
@@ -306,6 +318,7 @@ async function saveVehicle(form) {
   v.name = g('name'); v.type = g('type'); v.energy = g('energy'); v.status = g('status') || 'actuel';
   ['make', 'model', 'version', 'engine', 'powerCh', 'powerCv', 'year', 'gearbox', 'capacity', 'tires', 'plate', 'vin', 'notes'].forEach(function (k) { v[k] = g(k); });
   delete v.power;
+  v.fuel = g('fuel'); v.mode = g('mode') === 'manual' ? 'manual' : 'fills'; v.manualConso = num(g('manualConso')); v.manualPrice = num(g('manualPrice'));
   v.extra = extra;
   v.purchase = { condition: g('condition'), km: num(g('pkm')), date: g('pdate'), price: num(g('pprice')) };
   v.exit = { date: g('xdate'), km: num(g('xkm')), price: num(g('xprice')) };
@@ -360,8 +373,10 @@ async function deleteVehicle(id) {
   var v = data.vehicles.filter(function (x) { return x.id === id; })[0];
   if (!v) return;
   var rs = data.readings.filter(function (r) { return r.vehicleId === id; });
-  if (!confirm('Supprimer « ' + v.name + ' » et ses ' + rs.length + ' relevé(s) ? Cette action est définitive.')) return;
-  var t = db.transaction(['vehicles', 'readings', 'deleted'], 'readwrite'), now = Date.now();
+  var fs = data.fills.filter(function (r) { return r.vehicleId === id; });
+  if (!confirm('Supprimer « ' + v.name + ' », ses ' + rs.length + ' relevé(s) et ses ' + fs.length + ' plein(s) ? Cette action est définitive.')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'deleted'], 'readwrite'), now = Date.now();
+  fs.forEach(function (r) { t.objectStore('fills').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'fill', deletedAt: now }); });
   t.objectStore('vehicles').delete(id);
   t.objectStore('deleted').put({ id: id, kind: 'vehicle', deletedAt: now });
   rs.forEach(function (r) { t.objectStore('readings').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'reading', deletedAt: now }); });
@@ -372,7 +387,7 @@ async function deleteVehicle(id) {
 function buildExport() {
   return JSON.stringify({
     format: FORMAT, formatVersion: 1, appVersion: APP_VERSION, exportedAt: new Date().toISOString(),
-    vehicles: data.vehicles, readings: data.readings
+    vehicles: data.vehicles, readings: data.readings, fills: data.fills, prices: data.prices
   }, null, 1);
 }
 async function markExported() { await dbPut('meta', { key: 'lastExport', value: Date.now() }); await reload(); }
@@ -393,24 +408,31 @@ async function importText(text) {
   try { j = JSON.parse(text); } catch (e) { toast('Fichier illisible'); return; }
   if (!j || j.format !== FORMAT || !Array.isArray(j.vehicles)) { toast('Ce n\'est pas une sauvegarde de cette appli'); return; }
   var vs = j.vehicles, rs = Array.isArray(j.readings) ? j.readings : [];
-  var byV = {}, byR = {};
+  var fl = Array.isArray(j.fills) ? j.fills : [], pr = Array.isArray(j.prices) ? j.prices : [];
+  var byV = {}, byR = {}, byF = {}, byP = {};
   data.vehicles.forEach(function (x) { byV[x.id] = x; });
   data.readings.forEach(function (x) { byR[x.id] = x; });
+  data.fills.forEach(function (x) { byF[x.id] = x; });
+  data.prices.forEach(function (x) { byP[x.id] = x; });
   var newer = function (inc, cur) { return !cur || (inc.updatedAt || 0) > (cur.updatedAt || 0); };
   var addV = vs.filter(function (x) { return x && x.id && newer(x, byV[x.id]); });
   var addR = rs.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byR[x.id]); });
-  if (!addV.length && !addR.length) { toast('Rien de nouveau à importer'); return; }
-  if (!confirm('Importer ' + addV.length + ' véhicule(s) et ' + addR.length + ' relevé(s) (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
-  var t = db.transaction(['vehicles', 'readings', 'deleted'], 'readwrite');
+  var addF = fl.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byF[x.id]); });
+  var addP = pr.filter(function (x) { return x && x.id && x.fuel && x.month && newer(x, byP[x.id]); });
+  if (!addV.length && !addR.length && !addF.length && !addP.length) { toast('Rien de nouveau à importer'); return; }
+  if (!confirm('Importer ' + addV.length + ' véhicule(s), ' + addR.length + ' relevé(s), ' + addF.length + ' plein(s) et ' + addP.length + ' prix (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'deleted'], 'readwrite');
+  addF.forEach(function (x) { t.objectStore('fills').put(x); t.objectStore('deleted').delete(x.id); });
+  addP.forEach(function (x) { t.objectStore('prices').put(x); t.objectStore('deleted').delete(x.id); });
   addV.forEach(function (x) { t.objectStore('vehicles').put(x); t.objectStore('deleted').delete(x.id); });
   addR.forEach(function (x) { t.objectStore('readings').put(x); t.objectStore('deleted').delete(x.id); });
   await done(t); await reload(); render(); toast('Import terminé');
 }
 async function wipe() {
   if (!confirm('Effacer TOUTES les données de cet appareil ?')) return;
-  if (!confirm('Dernière confirmation : véhicules et relevés seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
-  var t = db.transaction(['vehicles', 'readings', 'deleted', 'meta'], 'readwrite');
-  ['vehicles', 'readings', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
+  if (!confirm('Dernière confirmation : véhicules, relevés, pleins et prix seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'deleted', 'meta'], 'readwrite');
+  ['vehicles', 'readings', 'fills', 'prices', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
   await done(t); await reload(); go('home'); toast('Données effacées');
 }
 

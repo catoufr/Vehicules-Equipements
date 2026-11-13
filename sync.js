@@ -20,26 +20,34 @@ function fmtDT(v) { try { return new Date(v).toLocaleString('fr-FR', { dateStyle
 
 /* ---------- Données locales vues comme des « documents » ---------- */
 function updOf(o) { return Number(o && o.updatedAt) || Number(o && o.createdAt) || 0; }
-function storeOf(key) { return key[0] === 'v' ? 'vehicles' : 'readings'; }
-function kindOf(key) { return key[0] === 'v' ? 'vehicle' : 'reading'; }
+var STORES = { v: 'vehicles', r: 'readings', f: 'fills', p: 'prices' };
+var KINDS = { v: 'vehicle', r: 'reading', f: 'fill', p: 'price' };
+var KIND2KEY = { vehicle: 'v', reading: 'r', fill: 'f', price: 'p' };
+function storeOf(key) { return STORES[key[0]]; }
+function kindOf(key) { return KINDS[key[0]]; }
+function listOf(key) { return data[storeOf(key)]; }
 function localDocs() {
   var l = {};
   data.vehicles.forEach(function (o) { l['v:' + o.id] = o; });
   data.readings.forEach(function (o) { l['r:' + o.id] = o; });
+  data.fills.forEach(function (o) { l['f:' + o.id] = o; });
+  data.prices.forEach(function (o) { l['p:' + o.id] = o; });
   return l;
 }
 function tombMap() {
   var m = {};
-  (data.deleted || []).forEach(function (d) { m[(d.kind === 'vehicle' ? 'v' : 'r') + ':' + d.id] = d.deletedAt || 0; });
+  (data.deleted || []).forEach(function (d) { m[(KIND2KEY[d.kind] || 'r') + ':' + d.id] = d.deletedAt || 0; });
   return m;
 }
 function docLabel(key, o) {
   if (!o) return key;
-  return key[0] === 'v' ? (o.name || 'véhicule') : ('relevé ' + fmtKm(o.km) + ' du ' + fmtDate(o.date));
+  if (key[0] === 'v') return o.name || 'véhicule';
+  if (key[0] === 'p') return 'prix ' + o.fuel + ' ' + o.month;
+  return (key[0] === 'f' ? 'plein' : 'relevé') + ' du ' + fmtDate(o.date);
 }
 function lastChange() {
   var m = 0;
-  data.vehicles.concat(data.readings).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
+  data.vehicles.concat(data.readings, data.fills, data.prices).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
   (data.deleted || []).forEach(function (d) { if ((d.deletedAt || 0) > m) m = d.deletedAt; });
   return m;
 }
@@ -110,7 +118,7 @@ async function tx(stores, fn) { var t = db.transaction(stores, 'readwrite'); fn(
 function parseFiles(files) {
   var rdoc = {}, rtomb = {};
   files.forEach(function (f) {
-    var m = /^veh_([vr])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vr])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
+    var m = /^veh_([vrfp])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vrfp])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
     if (m) rdoc[m[1] + ':' + m[2]] = { file: f, upd: u };
     else if (x) rtomb[x[1] + ':' + x[2]] = { file: f, upd: u };
   });
@@ -190,23 +198,25 @@ async function bkLoad() {
   } catch (e) { return null; }
 }
 async function safetyCopy(plan, mode) {
-  var vs = [], rs = [];
-  plan.down.forEach(function (p) { if (p.had) (p.key[0] === 'v' ? vs : rs).push(p.had); });
-  plan.delLocal.forEach(function (p) { (p.key[0] === 'v' ? vs : rs).push(p.o); });
-  if (!vs.length && !rs.length) return;
+  var vs = [], rs = [], fs = [], ps = [], to = { v: vs, r: rs, f: fs, p: ps };
+  plan.down.forEach(function (p) { if (p.had) to[p.key[0]].push(p.had); });
+  plan.delLocal.forEach(function (p) { to[p.key[0]].push(p.o); });
+  if (!vs.length && !rs.length && !fs.length && !ps.length) return;
   var o = { k: 'last', at: Date.now(), reason: mode === 'recv' ? 'avant « Récupérer depuis le Drive »' : 'avant remplacement par le Drive',
-    vehicles: JSON.parse(JSON.stringify(vs)), readings: JSON.parse(JSON.stringify(rs)) };
+    vehicles: JSON.parse(JSON.stringify(vs)), readings: JSON.parse(JSON.stringify(rs)),
+    fills: JSON.parse(JSON.stringify(fs)), prices: JSON.parse(JSON.stringify(ps)) };
   await bkSave(o); G.bk = o;
 }
 async function restoreBackup() {
   var b = G.bk || await bkLoad();
   if (!b) { G.msg = 'Aucune copie de sécurité.'; gbox(); return; }
-  await tx(['vehicles', 'readings', 'deleted'], function (t) {
-    b.vehicles.forEach(function (o) { t.objectStore('vehicles').put(o); t.objectStore('deleted').delete(o.id); });
-    b.readings.forEach(function (o) { t.objectStore('readings').put(o); t.objectStore('deleted').delete(o.id); });
+  await tx(['vehicles', 'readings', 'fills', 'prices', 'deleted'], function (t) {
+    ['vehicles', 'readings', 'fills', 'prices'].forEach(function (n) {
+      (b[n] || []).forEach(function (o) { t.objectStore(n).put(o); t.objectStore('deleted').delete(o.id); });
+    });
   });
   await reload();
-  G.msg = 'Copie de sécurité restaurée (' + b.vehicles.length + ' véhicule(s), ' + b.readings.length + ' relevé(s)). Synchronisez pour l\'envoyer sur le Drive.';
+  G.msg = 'Copie de sécurité restaurée (' + b.vehicles.length + ' véhicule(s), ' + b.readings.length + ' relevé(s), ' + (b.fills || []).length + ' plein(s), ' + (b.prices || []).length + ' prix). Synchronisez pour l\'envoyer sur le Drive.';
   render();
 }
 
@@ -310,7 +320,7 @@ function gbox() {
     }
     h += '</div>';
   }
-  if (G.bk) h += '<p class="muted">Copie de sécurité sur cet appareil : ' + fmtDT(G.bk.at) + ' (' + esc(G.bk.reason) + ', ' + G.bk.vehicles.length + ' véhicule(s), ' + G.bk.readings.length + ' relevé(s)). <button type="button" class="link" data-act="bkrestore">Restaurer</button></p>';
+  if (G.bk) h += '<p class="muted">Copie de sécurité sur cet appareil : ' + fmtDT(G.bk.at) + ' (' + esc(G.bk.reason) + ', ' + G.bk.vehicles.length + ' véhicule(s), ' + G.bk.readings.length + ' relevé(s), ' + (G.bk.fills || []).length + ' plein(s), ' + (G.bk.prices || []).length + ' prix). <button type="button" class="link" data-act="bkrestore">Restaurer</button></p>';
   h += '<label style="display:flex;gap:10px;align-items:flex-start;color:var(--text)"><input type="checkbox" data-g="auto" style="width:auto;min-height:0;margin-top:4px"' + (lsGet(AUTOKEY, false) ? ' checked' : '') + '> <span>Synchroniser à la première touche après l\'ouverture, si des modifications n\'ont pas été envoyées ou après plus de 6 h. Une fenêtre Google s\'ouvre alors brièvement.</span></label>';
   el.innerHTML = h;
 }
