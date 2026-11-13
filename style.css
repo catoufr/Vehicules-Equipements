@@ -69,3 +69,4 @@ legend { padding: 0 6px; font-weight: 600; }
 .formbar { position: sticky; bottom: 0; z-index: 3; display: flex; gap: 10px; margin: 16px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
   background: var(--bg); border-top: 1px solid var(--line); }
 .formbar > button { flex: 1; }
+nav#nav button.dirty span::after{content:'';display:inline-block;width:8px;height:8px;margin-left:2px;border-radius:50%;background:var(--warn);vertical-align:top}

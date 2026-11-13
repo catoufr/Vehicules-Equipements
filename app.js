@@ -2,8 +2,8 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.1.4';
-var APP_DATE = '12 novembre 2026';
+var APP_VERSION = '0.2.0';
+var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
 
@@ -41,7 +41,7 @@ function toast(msg) {
 
 /* ---------- Base locale ---------- */
 var db = null;
-var data = { vehicles: [], readings: [], lastExport: null };
+var data = { vehicles: [], readings: [], deleted: [], lastExport: null };
 
 function openDB() {
   return new Promise(function (res, rej) {
@@ -69,6 +69,7 @@ function done(t) {
 async function reload() {
   data.vehicles = await rq(st('vehicles').getAll());
   data.readings = await rq(st('readings').getAll());
+  data.deleted = await rq(st('deleted').getAll());
   var m = await rq(st('meta').get('lastExport'));
   data.lastExport = m ? m.value : null;
 }
@@ -137,6 +138,7 @@ function render() {
   else if (state.tab === 'maint') html = viewSoon('Entretiens', 'Le carnet d\'entretien, les prix détaillés et les factures jointes arrivent à l\'étape 0.4.');
   else if (state.tab === 'data') html = viewData();
   main.innerHTML = html;
+  if (window.afterRender) window.afterRender();
 }
 function go(tab, id) { state.tab = tab; state.vehicleId = id || null; render(); window.scrollTo(0, 0); }
 
@@ -229,7 +231,7 @@ function viewSoon(title, text) {
 function viewData() {
   var h = '<h1>Données</h1>';
   h += '<div class="card"><div class="row"><div><div class="big">Version ' + esc(APP_VERSION) + '</div><div class="muted">' + esc(APP_DATE) + '</div></div></div></div>';
-  h += '<div class="card"><div class="big">Synchronisation Google Drive</div><div class="muted">Arrive à l\'étape 0.2. En attendant, exportez régulièrement vos données.</div></div>';
+  h += '<h2>Synchronisation Google Drive</h2><div class="card" id="gbox"></div>';
   h += '<h2>Sauvegarde</h2><div class="card"><div class="muted">' + data.vehicles.length + ' véhicule(s), ' + data.readings.length + ' relevé(s). ' +
     (data.lastExport ? 'Dernier export : ' + new Date(data.lastExport).toLocaleDateString('fr-FR') + '.' : 'Jamais exporté.') + '</div>' +
     '<div class="actions"><button class="primary" data-act="export">Exporter (fichier)</button>' +
@@ -406,7 +408,7 @@ async function importText(text) {
 }
 async function wipe() {
   if (!confirm('Effacer TOUTES les données de cet appareil ?')) return;
-  if (!confirm('Dernière confirmation : véhicules et relevés seront perdus (sauf si vous les avez exportés).')) return;
+  if (!confirm('Dernière confirmation : véhicules et relevés seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
   var t = db.transaction(['vehicles', 'readings', 'deleted', 'meta'], 'readwrite');
   ['vehicles', 'readings', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
   await done(t); await reload(); go('home'); toast('Données effacées');
