@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.1.3';
+var APP_VERSION = '0.1.4';
 var APP_DATE = '12 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -291,7 +291,7 @@ function vehicleForm(id) {
     '<fieldset><legend>Sortie (si je ne l\'ai plus)</legend>' + fld('Date de sortie', 'xdate', x.date, { type: 'date' }) +
     fld('Kilométrage à la sortie', 'xkm', x.km, { inputmode: 'numeric' }) + fld('Prix de revente (€)', 'xprice', x.price, { inputmode: 'decimal' }) + '</fieldset>' +
     '<label for="f_notes">Remarques</label><textarea id="f_notes" name="notes">' + esc(v.notes || '') + '</textarea>' +
-    '<div class="actions"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
+    '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
   openSheet(h);
 }
 async function saveVehicle(form) {
@@ -324,8 +324,8 @@ function readingForm(vehicleId, readingId) {
     data.vehicles.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === vid ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('') + '</select>' +
     fld('Date', 'date', r ? r.date : todayStr(), { type: 'date', req: true }) +
     fld('Kilométrage', 'km', r ? r.km : '', { inputmode: 'numeric', req: true }) +
-    '<div class="actions">' + (r ? '<button type="button" class="danger" data-act="delReading" data-id="' + esc(r.id) + '">Supprimer</button>' : '') +
-    '<button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
+    (r ? '<div class="actions"><button type="button" class="danger" data-act="delReading" data-id="' + esc(r.id) + '">Supprimer ce relevé</button></div>' : '') +
+    '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
   openSheet(h);
   var k = $('#f_km'); if (k && !r) k.focus();
 }

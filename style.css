@@ -65,3 +65,7 @@ legend { padding: 0 6px; font-weight: 600; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom));
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; z-index: 20; font-size: .9rem; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Barre Annuler / Enregistrer fixe en bas des formulaires */
+.formbar { position: sticky; bottom: 0; z-index: 3; display: flex; gap: 10px; margin: 16px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg); border-top: 1px solid var(--line); }
+.formbar > button { flex: 1; }
