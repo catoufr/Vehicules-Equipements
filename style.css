@@ -64,3 +64,4 @@ legend { padding: 0 6px; font-weight: 600; }
 .empty { text-align: center; padding: 22px 10px; color: var(--muted); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom));
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; z-index: 20; font-size: .9rem; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

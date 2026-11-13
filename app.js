@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.1.2';
+var APP_VERSION = '0.1.3';
 var APP_DATE = '12 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -180,6 +180,13 @@ function kv(rows) {
   if (!r.length) return '<div class="muted">Rien de renseigné.</div>';
   return '<dl class="kv">' + r.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>';
 }
+function powerText(v) {
+  var parts = [];
+  if (v.powerCh) parts.push(v.powerCh + ' ch');
+  if (v.powerCv) parts.push(v.powerCv + ' CV');
+  if (!parts.length && v.power) parts.push(v.power); // anciennes fiches (0.1 / 0.1.1 / 0.1.2)
+  return parts.join(' · ');
+}
 function viewVehicle(id) {
   var v = data.vehicles.filter(function (x) { return x.id === id; })[0];
   if (!v) return '<div class="card empty">Véhicule introuvable.<div class="actions"><button data-act="tab" data-tab="vehicles">Retour</button></div></div>';
@@ -195,7 +202,7 @@ function viewVehicle(id) {
     '<button data-act="editVehicle" data-id="' + esc(id) + '">Modifier la fiche</button></div>';
   h += '<h2>Fiche technique</h2><div class="card">' + kv([
     ['Type', v.type], ['Énergie', v.energy], ['Marque', v.make], ['Modèle', v.model], ['Version', v.version],
-    ['Motorisation', v.engine], ['Puissance', v.power], ['Année', v.year], ['Boîte', v.gearbox],
+    ['Motorisation', v.engine], ['Puissance', powerText(v)], ['Année', v.year], ['Boîte', v.gearbox],
     ['Réservoir / batterie', v.capacity], ['Pneus', v.tires], ['Plaque', v.plate], ['VIN', v.vin]
   ].concat((v.extra || []).map(function (e) { return [e.k, e.v]; }))) + '</div>';
   h += '<h2>Achat</h2><div class="card">' + kv([
@@ -256,6 +263,7 @@ function vehicleForm(id) {
   var v = id ? data.vehicles.filter(function (x) { return x.id === id; })[0] : null;
   v = v || { status: 'actuel', purchase: {}, exit: {}, extra: [] };
   var p = v.purchase || {}, x = v.exit || {}, status = v.status || 'actuel';
+  var pCh = v.powerCh || (v.power && !v.powerCv ? (String(v.power).match(/\d+([.,]\d+)?/) || [''])[0] : '');
   var types = TYPES.concat(data.vehicles.map(function (a) { return a.type; }).filter(Boolean));
   var energies = ENERGIES.concat(data.vehicles.map(function (a) { return a.energy; }).filter(Boolean));
   var h = '<h1>' + (id ? 'Modifier la fiche' : 'Nouveau véhicule') + '</h1><form id="vform" data-id="' + esc(id || '') + '">' +
@@ -267,7 +275,9 @@ function vehicleForm(id) {
     '<label><input type="radio" name="status" value="ancien"' + (status === 'ancien' ? ' checked' : '') + '><span>Ancien</span></label></div>' +
     '<fieldset><legend>Fiche technique</legend>' +
     fld('Marque', 'make', v.make) + fld('Modèle', 'model', v.model) + fld('Version', 'version', v.version) +
-    fld('Motorisation', 'engine', v.engine) + fld('Puissance', 'power', v.power, { ph: 'ex. 110 ch' }) +
+    fld('Motorisation', 'engine', v.engine) +
+    '<div class="pair"><div>' + fld('Puissance (ch)', 'powerCh', pCh, { inputmode: 'decimal', ph: 'ex. 110' }) + '</div><div>' +
+    fld('Puissance fiscale (CV)', 'powerCv', v.powerCv, { inputmode: 'numeric', ph: 'ex. 6' }) + '</div></div>' +
     fld('Année', 'year', v.year, { inputmode: 'numeric' }) + fld('Boîte', 'gearbox', v.gearbox, { ph: 'manuelle, auto…' }) +
     fld('Réservoir ou batterie', 'capacity', v.capacity, { ph: 'ex. 45 L ou 60 kWh' }) + fld('Pneus', 'tires', v.tires) +
     '<label>Autres champs</label><div id="extras">' + (v.extra || []).map(function (e) { return extraRow(e.k, e.v); }).join('') + '</div>' +
@@ -292,7 +302,8 @@ async function saveVehicle(form) {
   xk.forEach(function (k, i) { k = String(k).trim(); var val = String(xv[i] || '').trim(); if (k || val) extra.push({ k: k || '—', v: val }); });
   var v = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now() };
   v.name = g('name'); v.type = g('type'); v.energy = g('energy'); v.status = g('status') || 'actuel';
-  ['make', 'model', 'version', 'engine', 'power', 'year', 'gearbox', 'capacity', 'tires', 'plate', 'vin', 'notes'].forEach(function (k) { v[k] = g(k); });
+  ['make', 'model', 'version', 'engine', 'powerCh', 'powerCv', 'year', 'gearbox', 'capacity', 'tires', 'plate', 'vin', 'notes'].forEach(function (k) { v[k] = g(k); });
+  delete v.power;
   v.extra = extra;
   v.purchase = { condition: g('condition'), km: num(g('pkm')), date: g('pdate'), price: num(g('pprice')) };
   v.exit = { date: g('xdate'), km: num(g('xkm')), price: num(g('xprice')) };
