@@ -19,6 +19,7 @@ Règles :
 
 function invPrompt() {
   if (INV.kind === 'reg') return REG_PROMPT;
+  if (INV.kind === 'insur') return INS_PROMPT;
   var v = document.getElementById('f_vid'), veh = v ? data.vehicles.filter(function (x) { return x.id === v.value; })[0] : null;
   var types = maintTypes().join(', ');
   return INV_PROMPT + (veh ? '\nVéhicule concerné (à vérifier avec la facture) : ' + veh.name + (veh.plate ? ', immatriculation ' + veh.plate : '') + '.' : '') +
@@ -30,7 +31,7 @@ var INVCLIP = { last: '', launched: false, busy: false };
 function invInit(kind) {
   INV.kind = kind || 'maint';
   var el = document.getElementById('aiBox'); if (!el) return;
-  el.innerHTML = '<h' + (INV.kind === 'reg' ? '3' : '2') + '>' + (INV.kind === 'reg' ? 'Lire la carte grise avec une IA' : 'Lire la facture avec une IA') + '</h' + (INV.kind === 'reg' ? '3' : '2') + '><div class="card"><div class="muted">Ajoute d\'abord la photo ou le PDF ' + (INV.kind === 'reg' ? 'de la carte grise (recto et verso)' : 'de la facture') + ' ci-dessus. Puis :<br><b>1.</b> « Analyser avec Claude ou Gemini » copie la consigne et envoie la facture vers l\'appli que tu choisis. <b>2.</b> Dans l\'appli, colle la consigne si elle n\'apparaît pas, puis touche « copier » sur la réponse. <b>3.</b> Reviens ici : le formulaire se remplit tout seul (sinon, touche « Coller la réponse »). Vérifie, corrige, enregistre.</div>' +
+  el.innerHTML = '<h' + (INV.kind === 'reg' ? '3' : '2') + '>' + (INV.kind === 'reg' ? 'Lire la carte grise avec une IA' : INV.kind === 'insur' ? 'Lire le contrat avec une IA' : 'Lire la facture avec une IA') + '</h' + (INV.kind === 'reg' ? '3' : '2') + '><div class="card"><div class="muted">Ajoute d\'abord la photo ou le PDF ' + (INV.kind === 'reg' ? 'de la carte grise (recto et verso)' : INV.kind === 'insur' ? 'du contrat ou de l\'avis d\'échéance' : 'de la facture') + ' ci-dessus. Puis :<br><b>1.</b> « Analyser avec Claude ou Gemini » copie la consigne et envoie la facture vers l\'appli que tu choisis. <b>2.</b> Dans l\'appli, colle la consigne si elle n\'apparaît pas, puis touche « copier » sur la réponse. <b>3.</b> Reviens ici : le formulaire se remplit tout seul (sinon, touche « Coller la réponse »). Vérifie, corrige, enregistre.</div>' +
     '<div class="actions"><button type="button" class="primary" data-act="invShare">Analyser avec Claude ou Gemini</button></div>' +
     '<div class="actions"><button type="button" data-act="invCopy">Copier la consigne</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener" data-act="invOpen" style="text-decoration:none;text-align:center">Ouvrir Claude</a><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener" data-act="invOpen" style="text-decoration:none;text-align:center">Ouvrir Gemini</a></div>' +
     '<div class="actions"><button type="button" data-act="invPaste">Coller la réponse</button></div>' +
@@ -53,7 +54,7 @@ async function invShare() {
   if (!files.length) { toast(copied ? 'Consigne copiée. Ajoute d\'abord la photo de la facture (＋ Photos ou PDF).' : 'Ajoute d\'abord la photo de la facture.'); return; }
   try {
     if (navigator.canShare && navigator.canShare({ files: files })) {
-      await navigator.share({ files: files, text: txt, title: INV.kind === 'reg' ? 'Carte grise' : 'Facture d\'entretien' });
+      await navigator.share({ files: files, text: txt, title: INV.kind === 'reg' ? 'Carte grise' : INV.kind === 'insur' ? 'Contrat d\'assurance' : 'Facture d\'entretien' });
       toast(copied ? 'Consigne copiée. Colle-la dans l\'appli si elle n\'apparaît pas.' : 'Choisis Claude ou Gemini, puis colle la consigne (bouton « Copier la consigne »).'); return;
     }
   } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -65,11 +66,12 @@ function invParse(raw) {
   var t = String(raw || '').trim(), m = /\{[\s\S]*\}/.exec(t); if (!m) return null;
   try { var j = JSON.parse(m[0]); return j && typeof j === 'object' ? j : null; } catch (e) { return null; }
 }
-function invLooks(t) { var j = invParse(t); if (j && INV.kind === 'reg') return !!(j.A || j.E || j.D1 || j.D3); return !!(j && (Array.isArray(j.lines) || j.total_ttc != null) && (j.type || j.date || j.lines)); }
+function invLooks(t) { var j = invParse(t); if (j && INV.kind === 'reg') return !!(j.A || j.E || j.D1 || j.D3); if (j && INV.kind === 'insur') return !!(j.insurer || j.annual_premium != null); return !!(j && (Array.isArray(j.lines) || j.total_ttc != null) && (j.type || j.date || j.lines)); }
 function nn(x) { if (x == null || x === '') return null; var v = typeof x === 'number' ? x : num(String(x).replace(/\s/g, '').replace(',', '.')); return v != null && isFinite(v) ? v : null; }
 function mark(el) { if (el) el.classList.add('auto'); }
 function invFill(raw) {
   if (INV.kind === 'reg') return regFill(raw);
+  if (INV.kind === 'insur') return insFill(raw);
   var j = invParse(raw), res = document.getElementById('invRes');
   if (!j) { toast('Réponse illisible : copie le bloc complet (de { à }).'); return; }
   var f = document.getElementById('mform'); if (!f) return;

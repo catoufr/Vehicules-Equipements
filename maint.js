@@ -39,12 +39,12 @@ function sumExp(id, kind) { return vehExpenses(id).filter(function (e) { return 
 function energySpend(v) { return (fillStats(v.id).eur || 0) + chargesCost(v.id); }
 
 function maintVehicleSection(v) {
-  var ms = vehMaints(v.id), es = vehExpenses(v.id), en = energySpend(v), mt = sumMaint(v.id), ex = sumExp(v.id, 'depense'), an = sumExp(v.id, 'annexe');
+  var ms = vehMaints(v.id), es = vehExpenses(v.id), en = energySpend(v), mt = sumMaint(v.id), ex = sumExp(v.id, 'depense'), an = sumExp(v.id, 'annexe'), as = insCost(v.id).cost;
   var h = '<h2>Entretiens (' + ms.length + ')</h2><div class="actions"><button data-act="addMaint" data-id="' + esc(v.id) + '">＋ Entretien</button></div>';
   h += ms.length ? '<div class="card list">' + ms.map(function (m) { return maintItem(m, false); }).join('') + '</div>' : '<div class="card muted">Aucun entretien enregistré.</div>';
   h += '<h2>Dépenses et achats annexes (' + es.length + ')</h2><div class="actions"><button data-act="addExp" data-id="' + esc(v.id) + '">＋ Dépense</button><button data-act="addAnnexe" data-id="' + esc(v.id) + '">＋ Achat annexe</button></div>';
   h += es.length ? '<div class="card list">' + es.map(function (e) { return expItem(e, false); }).join('') + '</div>' : '<div class="card muted">Aucune dépense (assurance, péage, protège-écran…).</div>';
-  h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Énergie (pleins et recharges)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Total (hors achat du véhicule)', fmtEur(en + mt + ex + an)]]) + '</div>';
+  h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Énergie (pleins et recharges)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Assurance (au prorata)', fmtEur(as)], ['Total (hors achat du véhicule)', fmtEur(en + mt + ex + an + as)]]) + '</div>';
   return h;
 }
 function viewMaint() {
@@ -128,8 +128,9 @@ async function saveMaint(form) {
   toast('Entretien enregistré' + (nAtt ? ' (' + nAtt + ' pièce(s) jointe(s) ajoutée(s))' : ''));
 }
 async function deleteRec(store, kind, id, label) {
-  if (!confirm('Supprimer ' + label + (store === 'maints' && attCount('maint', id) ? ' et ses ' + attCount('maint', id) + ' pièce(s) jointe(s)' : '') + ' ?')) return;
+  if (!confirm('Supprimer ' + label + (store === 'maints' && attCount('maint', id) ? ' et ses ' + attCount('maint', id) + ' pièce(s) jointe(s)' : '') + (store === 'insur' && attCount('insur', id) ? ' et ses ' + attCount('insur', id) + ' document(s)' : '') + ' ?')) return;
   if (store === 'maints') await attPurgeOwner('maint', id);
+  if (store === 'insur') await attPurgeOwner('insur', id);
   var t = db.transaction([store, 'deleted'], 'readwrite');
   t.objectStore(store).delete(id); t.objectStore('deleted').put({ id: id, kind: kind, deletedAt: Date.now() });
   await done(t); await reload(); closeSheet(); render();
