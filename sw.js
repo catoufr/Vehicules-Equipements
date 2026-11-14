@@ -1,11 +1,11 @@
 'use strict';
 // Changer VERSION à chaque publication (avec APP_VERSION dans app.js).
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 // Préfixe propre à cette appli : les trois applis partagent la même origine,
 // on ne touche jamais aux caches des autres.
 const PREFIX = 'veh-equip-';
 const CACHE = PREFIX + VERSION;
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'energy.js', 'maint.js', 'charges.js', 'sync.js', 'manifest-vehicules.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'energy.js', 'maint.js', 'attach.js', 'charges.js', 'sync.js', 'manifest-vehicules.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(

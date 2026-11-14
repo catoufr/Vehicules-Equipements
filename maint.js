@@ -26,7 +26,7 @@ function expCats() { var t = {}; EXP_CATS.forEach(function (x) { t[x] = 1; }); d
 function maintItem(m, showVeh) {
   var tot = maintTotal(m);
   return '<div class="item"><div><b>' + esc(m.type || 'Entretien') + '</b> · ' + fmtDate(m.date) + (showVeh ? ' · ' + esc(vehName(m.vehicleId)) : '') +
-    '<div class="muted">' + [m.km != null ? fmtKm(m.km) : '', m.place || '', tot != null ? fmtEur(tot) : ''].filter(Boolean).join(' · ') + '</div></div>' +
+    '<div class="muted">' + [m.km != null ? fmtKm(m.km) : '', m.place || '', tot != null ? fmtEur(tot) : '', attCount('maint', m.id) ? '📎 ' + attCount('maint', m.id) : ''].filter(Boolean).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editMaint" data-id="' + esc(m.id) + '">Modifier</button></div></div>';
 }
 function expItem(e, showVeh) {
@@ -86,10 +86,11 @@ function maintForm(vehicleId, id) {
     '<label><input type="radio" name="incl" value="HT"' + (m && m.incl === 'HT' ? ' checked' : '') + '><span>HT</span></label></div>' +
     '<div class="pair"><div>' + fld('TVA (%) si HT', 'vat', m && m.vat != null ? m.vat : 20, { inputmode: 'decimal' }) + '</div><div>' + fld('Remise (€)', 'discount', m ? m.discount : '', { inputmode: 'decimal' }) + '</div></div>' +
     '<div class="card"><div class="muted">Total TTC calculé</div><div class="big" id="mcalc">–</div></div></div>' +
+    '<h2>Pièces jointes</h2><div id="attBox"></div>' +
     '<label for="f_notes">Remarques</label><textarea id="f_notes" name="notes">' + esc(m ? m.notes || '' : '') + '</textarea>' +
     (m ? '<div class="actions"><button type="button" class="danger" data-act="delMaint" data-id="' + esc(m.id) + '">Supprimer cet entretien</button></div>' : '') +
     '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
-  openSheet(h); maintCalc();
+  openSheet(h); maintCalc(); attInit('maint', m ? m.id : '');
 }
 function readMaintForm(form) {
   var fd = new FormData(form), g = function (k) { return (fd.get(k) || '').toString().trim(); };
@@ -117,15 +118,17 @@ async function saveMaint(form) {
   var m = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now() };
   Object.assign(m, p, { vehicleId: vid, type: type, date: date, km: km, place: g('place'), notes: g('notes'), updatedAt: Date.now() });
   await dbPut('maints', m);
+  var nAtt = await attCommit('maint', m.id, vid, m.type + ' ' + date);
   if (km != null && !data.readings.some(function (r) { return r.vehicleId === vid && r.date === date && r.km === km; })) {
     await dbPut('readings', { id: uid(), vehicleId: vid, date: date, km: km, createdAt: Date.now(), updatedAt: Date.now(), fromMaint: true });
   }
   await reload(); closeSheet();
   if (state.tab === 'vehicle') go('vehicle', vid); else render();
-  toast('Entretien enregistré');
+  toast('Entretien enregistré' + (nAtt ? ' (' + nAtt + ' pièce(s) jointe(s) ajoutée(s))' : ''));
 }
 async function deleteRec(store, kind, id, label) {
-  if (!confirm('Supprimer ' + label + ' ?')) return;
+  if (!confirm('Supprimer ' + label + (store === 'maints' && attCount('maint', id) ? ' et ses ' + attCount('maint', id) + ' pièce(s) jointe(s)' : '') + ' ?')) return;
+  if (store === 'maints') await attPurgeOwner('maint', id);
   var t = db.transaction([store, 'deleted'], 'readwrite');
   t.objectStore(store).delete(id); t.objectStore('deleted').put({ id: id, kind: kind, deletedAt: Date.now() });
   await done(t); await reload(); closeSheet(); render();

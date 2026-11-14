@@ -20,9 +20,9 @@ function fmtDT(v) { try { return new Date(v).toLocaleString('fr-FR', { dateStyle
 
 /* ---------- Données locales vues comme des « documents » ---------- */
 function updOf(o) { return Number(o && o.updatedAt) || Number(o && o.createdAt) || 0; }
-var STORES = { v: 'vehicles', r: 'readings', f: 'fills', p: 'prices', m: 'maints', e: 'expenses', t: 'tariffs', c: 'charges' };
-var KINDS = { v: 'vehicle', r: 'reading', f: 'fill', p: 'price', m: 'maint', e: 'expense', t: 'tariff', c: 'charge' };
-var KIND2KEY = { vehicle: 'v', reading: 'r', fill: 'f', price: 'p', maint: 'm', expense: 'e', tariff: 't', charge: 'c' };
+var STORES = { v: 'vehicles', r: 'readings', f: 'fills', p: 'prices', m: 'maints', e: 'expenses', t: 'tariffs', c: 'charges', a: 'atts' };
+var KINDS = { v: 'vehicle', r: 'reading', f: 'fill', p: 'price', m: 'maint', e: 'expense', t: 'tariff', c: 'charge', a: 'attachment' };
+var KIND2KEY = { vehicle: 'v', reading: 'r', fill: 'f', price: 'p', maint: 'm', expense: 'e', tariff: 't', charge: 'c', attachment: 'a' };
 function storeOf(key) { return STORES[key[0]]; }
 function kindOf(key) { return KINDS[key[0]]; }
 function listOf(key) { return data[storeOf(key)]; }
@@ -36,6 +36,7 @@ function localDocs() {
   data.expenses.forEach(function (o) { l['e:' + o.id] = o; });
   data.tariffs.forEach(function (o) { l['t:' + o.id] = o; });
   data.charges.forEach(function (o) { l['c:' + o.id] = o; });
+  data.atts.forEach(function (o) { l['a:' + o.id] = o; });
   return l;
 }
 function tombMap() {
@@ -48,11 +49,11 @@ function docLabel(key, o) {
   if (key[0] === 'v') return o.name || 'véhicule';
   if (key[0] === 't') return 'tarif du ' + fmtDate(o.from);
   if (key[0] === 'p') return 'prix ' + o.fuel + ' ' + o.month;
-  return ({ f: 'plein', m: 'entretien', e: 'dépense', c: 'recharge' }[key[0]] || 'relevé') + ' du ' + fmtDate(o.date);
+  return ({ f: 'plein', m: 'entretien', e: 'dépense', c: 'recharge', a: 'pièce jointe' }[key[0]] || 'relevé') + ' du ' + fmtDate(o.date);
 }
 function lastChange() {
   var m = 0;
-  data.vehicles.concat(data.readings, data.fills, data.prices, data.maints, data.expenses, data.tariffs, data.charges).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
+  data.vehicles.concat(data.readings, data.fills, data.prices, data.maints, data.expenses, data.tariffs, data.charges, data.atts).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
   (data.deleted || []).forEach(function (d) { if ((d.deletedAt || 0) > m) m = d.deletedAt; });
   return m;
 }
@@ -68,13 +69,14 @@ function loadGsi() {
     document.head.appendChild(s);
   });
 }
-function gToken() {
-  if (G.tok && Date.now() < G.exp) return Promise.resolve(G.tok);
+var FSCOPE = 'https://www.googleapis.com/auth/drive.file';
+function gToken(withFile) { // withFile : demande aussi l'accès aux pièces jointes (dossier visible du Drive)
+  if (G.tok && Date.now() < G.exp && (!withFile || G.file)) return Promise.resolve(G.tok);
   return new Promise(function (resolve, reject) {
     var tc = google.accounts.oauth2.initTokenClient({
-      client_id: GCLIENT, scope: GSCOPE,
+      client_id: GCLIENT, scope: withFile ? GSCOPE + ' ' + FSCOPE : GSCOPE,
       callback: function (r) {
-        if (r && r.access_token) { G.tok = r.access_token; G.exp = Date.now() + ((r.expires_in || 3600) - 120) * 1000; resolve(G.tok); }
+        if (r && r.access_token) { G.tok = r.access_token; G.file = !!withFile && String(r.scope || '').indexOf('drive.file') >= 0; G.exp = Date.now() + ((r.expires_in || 3600) - 120) * 1000; resolve(G.tok); }
         else reject(new Error((r && r.error) || 'auth'));
       },
       error_callback: function (e) { reject(new Error((e && e.type) || 'auth')); }
@@ -123,7 +125,7 @@ async function tx(stores, fn) { var t = db.transaction(stores, 'readwrite'); fn(
 function parseFiles(files) {
   var rdoc = {}, rtomb = {};
   files.forEach(function (f) {
-    var m = /^veh_([vrfpmetc])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vrfpmetc])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
+    var m = /^veh_([vrfpmetca])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vrfpmetca])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
     if (m) rdoc[m[1] + ':' + m[2]] = { file: f, upd: u };
     else if (x) rtomb[x[1] + ':' + x[2]] = { file: f, upd: u };
   });
@@ -203,22 +205,22 @@ async function bkLoad() {
   } catch (e) { return null; }
 }
 async function safetyCopy(plan, mode) {
-  var vs = [], rs = [], fs = [], ps = [], ms = [], es = [], ts = [], cs = [], to = { v: vs, r: rs, f: fs, p: ps, m: ms, e: es, t: ts, c: cs };
+  var vs = [], rs = [], fs = [], ps = [], ms = [], es = [], ts = [], cs = [], as = [], to = { v: vs, r: rs, f: fs, p: ps, m: ms, e: es, t: ts, c: cs, a: as };
   plan.down.forEach(function (p) { if (p.had) to[p.key[0]].push(p.had); });
   plan.delLocal.forEach(function (p) { to[p.key[0]].push(p.o); });
-  if (!vs.length && !rs.length && !fs.length && !ps.length && !ms.length && !es.length && !ts.length && !cs.length) return;
+  if (!vs.length && !rs.length && !fs.length && !ps.length && !ms.length && !es.length && !ts.length && !cs.length && !as.length) return;
   var o = { k: 'last', at: Date.now(), reason: mode === 'recv' ? 'avant « Récupérer depuis le Drive »' : 'avant remplacement par le Drive',
     vehicles: JSON.parse(JSON.stringify(vs)), readings: JSON.parse(JSON.stringify(rs)),
     fills: JSON.parse(JSON.stringify(fs)), prices: JSON.parse(JSON.stringify(ps)),
     maints: JSON.parse(JSON.stringify(ms)), expenses: JSON.parse(JSON.stringify(es)),
-    tariffs: JSON.parse(JSON.stringify(ts)), charges: JSON.parse(JSON.stringify(cs)) };
+    tariffs: JSON.parse(JSON.stringify(ts)), charges: JSON.parse(JSON.stringify(cs)), atts: JSON.parse(JSON.stringify(as)) };
   await bkSave(o); G.bk = o;
 }
 async function restoreBackup() {
   var b = G.bk || await bkLoad();
   if (!b) { G.msg = 'Aucune copie de sécurité.'; gbox(); return; }
-  await tx(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'deleted'], function (t) {
-    ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges'].forEach(function (n) {
+  await tx(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'atts', 'deleted'], function (t) {
+    ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'atts'].forEach(function (n) {
       (b[n] || []).forEach(function (o) { t.objectStore(n).put(o); t.objectStore('deleted').delete(o.id); });
     });
   });
@@ -243,7 +245,14 @@ async function doSync(mode) {
   G.confirm = null; G.busy = true; G.msg = 'Connexion à Google…'; G.report = null; gbox();
   try {
     await loadGsi();
-    var tok = await gToken();
+    var needFile = typeof attPending === 'function' && (attPending() > 0 || delQueue().length > 0), tok, att = null;
+    try { tok = await gToken(needFile); }
+    catch (e) { if (!needFile) throw e; G.attMsg = 'Pièces jointes non envoyées : accès au dossier Drive refusé ou fenêtre fermée.'; tok = await gToken(false); }
+    if (needFile && G.file) {
+      G.msg = 'Envoi des pièces jointes…'; gbox();
+      try { att = await attUploadPending(tok, function (d, n) { G.msg = 'Envoi des pièces jointes… ' + d + ' / ' + n; gbox(); }); G.attMsg = att.failed ? att.failed + ' pièce(s) jointe(s) non envoyée(s)' + (att.err ? ' (' + att.err.slice(0, 120) + ')' : '') + ' : réessayez à la prochaine synchronisation.' : ''; }
+      catch (e) { G.attMsg = 'Envoi des pièces jointes impossible : ' + syncErr(e); }
+    }
     G.msg = 'Lecture du Drive…'; gbox();
     var files = await dList(tok), plan = mode ? planForce(files, mode) : planSync(files);
     await safetyCopy(plan, mode);
@@ -283,6 +292,7 @@ async function doSync(mode) {
     plan.mkTomb.forEach(function (p) { tasks.push(async function () { await dPut(tok, null, PFX + 'x_' + p.key.replace(':', '_'), p.ts, '{}'); }); });
     await pool(tasks, 4, function (d, n) { G.msg = 'Synchronisation… ' + d + ' / ' + n; gbox(); });
     await reload();
+    if (typeof attAfterSync === 'function') await attAfterSync();
     var mf = files.find(function (f) { return f.name === PFX + 'meta'; }),
       pushed = plan.up.length || plan.delRemote.length || plan.mkTomb.length, now = Date.now(), remote = null;
     if (pushed || !mf) { await dPut(tok, mf ? mf.id : null, PFX + 'meta', now, '{}', devName()); remote = { at: now, by: devName() }; }
@@ -309,6 +319,7 @@ function gbox() {
   }
   h += '<div class="actions"><button class="primary" type="button" data-act="sync"' + (G.busy ? ' disabled' : '') + '>' + (G.busy ? 'Synchronisation…' : 'Synchroniser') + '</button></div>';
   if (G.msg) h += '<div class="card warn" role="status">' + esc(G.msg) + '</div>';
+  if (typeof attPending === 'function') { var np = attPending(); if (np || G.attMsg) h += '<p class="muted">Pièces jointes : ' + (np ? np + ' en attente d\'envoi vers le Drive (envoyées à la prochaine synchronisation). ' : 'toutes envoyées. ') + esc(G.attMsg || '') + '</p>'; }
   if (r && !G.busy) {
     var parts = [];
     if (r.up) parts.push(r.up + ' envoyé' + (r.up > 1 ? 's' : '')); if (r.down) parts.push(r.down + ' récupéré' + (r.down > 1 ? 's' : '')); if (r.del) parts.push(r.del + ' suppression' + (r.del > 1 ? 's' : ''));
