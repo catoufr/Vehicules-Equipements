@@ -29,16 +29,19 @@ function priceForMonth(fuel, date) {
   var m = (date || '').slice(0, 7), r = priceRows(fuel).filter(function (p) { return p.month === m; })[0];
   return r ? r.price : null;
 }
-// moyenne des prix mensuels entre deux dates ; à défaut, mois le plus proche ; à défaut, null
+// Prix moyen entre deux dates : moyenne des prix mensuels de la table, chaque mois pondéré par son nombre de jours dans l'intervalle ;
+// mois absents de la table ignorés ; aucun mois connu dans l'intervalle → mois le plus proche ; table vide → null
 function avgPrice(fuel, d1, d2) {
   var rows = priceRows(fuel); if (!rows.length) return null;
-  var a = d1.slice(0, 7), b = d2.slice(0, 7), sel = rows.filter(function (p) { return p.month >= a && p.month <= b; });
-  if (!sel.length) {
-    var mid = a, best = rows[0], bd = 1e9;
-    rows.forEach(function (p) { var d = Math.abs((Number(p.month.slice(0, 4)) * 12 + Number(p.month.slice(5))) - (Number(mid.slice(0, 4)) * 12 + Number(mid.slice(5)))); if (d < bd) { bd = d; best = p; } });
-    return best.price;
-  }
-  return sel.reduce(function (s, p) { return s + p.price; }, 0) / sel.length;
+  var byM = {}; rows.forEach(function (p) { byM[p.month] = p.price; });
+  var a = Date.UTC(+d1.slice(0, 4), +d1.slice(5, 7) - 1, +d1.slice(8, 10)), b = Date.UTC(+d2.slice(0, 4), +d2.slice(5, 7) - 1, +d2.slice(8, 10));
+  if (b < a) { var t = a; a = b; b = t; }
+  var sum = 0, w = 0;
+  for (var d = a; d <= b; d += 86400000) { var m = new Date(d).toISOString().slice(0, 7); if (byM[m] != null) { sum += byM[m]; w++; } }
+  if (w) return sum / w;
+  var mid = d1.slice(0, 7), mi = Number(mid.slice(0, 4)) * 12 + Number(mid.slice(5)), best = rows[0], bd = 1e9;
+  rows.forEach(function (p) { var dd = Math.abs(Number(p.month.slice(0, 4)) * 12 + Number(p.month.slice(5)) - mi); if (dd < bd) { bd = dd; best = p; } });
+  return best.price;
 }
 // Plein à plein : segments entre deux pleins complets successifs
 function fillStats(id) {
@@ -65,14 +68,15 @@ function fillStats(id) {
 function manualStats(v) {
   var c = v.manualConso; if (!(c > 0)) return null;
   var pts = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
-  var out = { km: 0, liters: 0, eur: 0, noPrice: 0, from: null, to: null }, fuel = fuelOf(v);
+  var out = { km: 0, liters: 0, eur: 0, litersPriced: 0, noPrice: 0, from: null, to: null }, fuel = fuelOf(v);
   for (var i = 1; i < pts.length; i++) {
     var a = pts[i - 1], b = pts[i], km = b.km - a.km; if (!(km > 0)) continue;
     var pr = fuel ? avgPrice(fuel, a.date, b.date) : null; if (pr == null) pr = v.manualPrice > 0 ? v.manualPrice : null;
     out.km += km; out.liters += km * c / 100;
-    if (pr == null) out.noPrice += km; else out.eur += km * c / 100 * pr;
+    if (pr == null) out.noPrice += km; else { out.eur += km * c / 100 * pr; out.litersPriced += km * c / 100; }
     if (!out.from) out.from = a.date; out.to = b.date;
   }
+  if (out.litersPriced > 0) out.avgPrice = out.eur / out.litersPriced;
   return out.km > 0 ? out : null;
 }
 
@@ -89,9 +93,33 @@ function statRows(v) {
   var ms = manualStats(v);
   if (!ms) return '<div class="muted">Mode « Conso moyenne » : renseignez la conso moyenne dans la fiche et au moins deux relevés ou dates avec kilométrage.</div>';
   rows = kv([['Période', fmtDate(ms.from) + ' → ' + fmtDate(ms.to)], ['Kilomètres', fmtKm(ms.km)], ['Litres estimés', fmtL(ms.liters)],
-    ['Coût estimé', ms.noPrice < ms.km ? fmtEur(ms.eur) : ''], ['Coût estimé au km', ms.noPrice < ms.km && ms.km ? fmtM(ms.eur / (ms.km - ms.noPrice)) : '']]);
+    ['Prix moyen retenu', ms.avgPrice != null ? fmtPpl(ms.avgPrice) : ''], ['Coût estimé', ms.noPrice < ms.km ? fmtEur(ms.eur) : ''], ['Coût estimé au km', ms.noPrice < ms.km && ms.km ? fmtM(ms.eur / (ms.km - ms.noPrice)) : '']]);
   if (ms.noPrice) rows += '<div class="muted">Prix manquant pour ' + fmtKm(ms.noPrice) + ' : ajoutez des prix dans l\'onglet Énergie ou un prix moyen dans la fiche.</div>';
   return rows + '<div class="muted">Valeurs <b>estimées</b> (conso moyenne × prix moyens mensuels).</div>';
+}
+// Résumé en tête de la fiche d'un véhicule : km parcourus, énergie, coût, prix moyen retenu
+function summaryCard(v) {
+  var pts = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
+  if (pts.length < 2) return '';
+  var p0 = pts[0], p1 = pts[pts.length - 1], km = p1.km - p0.km; if (!(km > 0)) return '';
+  var rows = [['Période', fmtDate(p0.date) + ' → ' + fmtDate(p1.date)], ['Kilomètres parcourus', fmtKm(km)]], note = '';
+  if (isElec(v)) {
+    var e = evStats(v), cs = vehCharges(v.id);
+    if (cs.length) {
+      var kwh = 0, eur = 0, ek = 0; cs.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; ek += c.kwh; } });
+      rows.push(['Énergie rechargée', fmtKwh(kwh)], ['Prix moyen payé', ek ? fmtPk(eur / ek) : ''], ['Coût réel (recharges)', fmtEur(eur)]);
+      if (e) rows.push(['Conso réelle', fmtKwh(e.real100).replace(' kWh', ' kWh/100 km')]);
+      note = 'Valeurs réelles (recharges enregistrées).';
+    }
+  } else if (v.mode === 'manual') {
+    var ms = manualStats(v);
+    if (ms) { rows.push(['Litres estimés', fmtL(ms.liters)], ['Prix moyen retenu', ms.avgPrice != null ? fmtPpl(ms.avgPrice) : ''], ['Coût estimé', ms.noPrice < ms.km ? fmtEur(ms.eur) : '']);
+      note = 'Estimations : conso moyenne × kilomètres entre relevés × prix moyens mensuels. Recalculées à chaque nouveau relevé.' + (ms.noPrice ? ' Prix manquant pour ' + fmtKm(ms.noPrice) + '.' : ''); }
+  } else {
+    var fs = fillStats(v.id);
+    if (fs.n) { rows.push(['Litres (pleins saisis)', fmtL(fs.liters)], ['Prix moyen payé', fmtPpl(fs.ppl)], ['Coût réel (pleins)', fmtEur(fs.eur)]); note = 'Valeurs réelles (pleins enregistrés).'; }
+  }
+  return '<div class="card"><div class="muted">Résumé énergie</div>' + kv(rows) + (note ? '<div class="muted">' + esc(note) + '</div>' : '') + '</div>';
 }
 function fillItem(f) {
   var c = fillCost(f);

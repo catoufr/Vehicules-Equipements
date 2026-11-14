@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.7.1';
+var APP_VERSION = '0.8.0';
 var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -214,6 +214,7 @@ function viewVehicle(id) {
   h += '<div class="card"><div class="muted">Kilométrage ' + (old && x.km != null ? 'à la sortie' : 'actuel') + '</div><div class="big">' +
     fmtKm(old && x.km != null ? x.km : km) + '</div>' +
     (p.km != null && km != null ? '<div class="muted">' + fmtKm(km - p.km) + ' depuis l\'achat</div>' : '') + '</div>';
+  h += summaryCard(v);
   h += '<div class="actions"><button class="primary" data-act="addReading" data-id="' + esc(id) + '">＋ Kilométrage</button>' +
     '<button data-act="editVehicle" data-id="' + esc(id) + '">Modifier la fiche</button></div>';
   h += '<h2>Fiche technique</h2><div class="card">' + kv([
@@ -221,6 +222,7 @@ function viewVehicle(id) {
     ['Motorisation', v.engine], ['Puissance', powerText(v)], ['Année', v.year], ['Boîte', v.gearbox],
     ['Réservoir / batterie', v.capacity], ['Pneus', v.tires], ['Plaque', v.plate], ['VIN', v.vin]
   ].concat((v.extra || []).map(function (e) { return [e.k, e.v]; }))) + '</div>';
+  h += regSection(v);
   h += '<h2>Achat</h2><div class="card">' + kv([
     ['État', p.condition], ['Date', p.date ? fmtDate(p.date) : ''], ['Kilométrage', p.km != null ? fmtKm(p.km) : ''],
     ['Prix', p.price != null ? fmtEur(p.price) : '']]) + '</div>';
@@ -309,6 +311,8 @@ function vehicleForm(id) {
     fld('Conso moyenne connue (L/100 km, ou kWh/100 km en électrique)', 'manualConso', v.manualConso, { inputmode: 'decimal', ph: 'ex. 6,5' }) +
     fld('Prix moyen du litre ou du kWh si pas dans la table (€)', 'manualPrice', v.manualPrice, { inputmode: 'decimal', ph: 'ex. 1,75' }) +
     '<div class="muted">Le mode « Conso moyenne » sert aux véhicules sans tickets : le coût est estimé à partir des kilomètres entre deux relevés. En électrique, la conso moyenne sert au coût d\'utilisation ; le coût réel vient toujours des recharges.</div></fieldset>' +
+    '<details class="card" id="regDet"><summary><b>Carte grise</b> <span class="muted">(toutes les rubriques, photos, lecture par IA)</span></summary>' + regFieldsHtml(v) +
+    '<h3>Photos de la carte grise</h3><div id="attBox"></div><div id="aiBox"></div></details>' +
     '<fieldset><legend>Achat</legend><label for="f_condition">Neuf ou occasion</label><select id="f_condition" name="condition">' +
     ['', 'Neuf', 'Occasion'].map(function (o) { return '<option value="' + o + '"' + (p.condition === o ? ' selected' : '') + '>' + (o || '—') + '</option>'; }).join('') + '</select>' +
     fld('Kilométrage à l\'achat (0 pour un neuf)', 'pkm', p.km, { inputmode: 'numeric' }) +
@@ -317,7 +321,7 @@ function vehicleForm(id) {
     fld('Kilométrage à la sortie', 'xkm', x.km, { inputmode: 'numeric' }) + fld('Prix de revente (€)', 'xprice', x.price, { inputmode: 'decimal' }) + '</fieldset>' +
     '<label for="f_notes">Remarques</label><textarea id="f_notes" name="notes">' + esc(v.notes || '') + '</textarea>' +
     '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
-  openSheet(h);
+  openSheet(h); attInit('vehicle', id || ''); invInit('reg');
 }
 async function saveVehicle(form) {
   var fd = new FormData(form), id = form.getAttribute('data-id');
@@ -330,15 +334,16 @@ async function saveVehicle(form) {
   ['make', 'model', 'version', 'engine', 'powerCh', 'powerCv', 'year', 'gearbox', 'capacity', 'tires', 'plate', 'vin', 'notes'].forEach(function (k) { v[k] = g(k); });
   delete v.power;
   v.fuel = g('fuel'); v.mode = g('mode') === 'manual' ? 'manual' : 'fills'; v.manualConso = num(g('manualConso')); v.manualPrice = num(g('manualPrice'));
-  v.extra = extra;
+  v.extra = extra; v.reg = regRead(g);
   v.purchase = { condition: g('condition'), km: num(g('pkm')), date: g('pdate'), price: num(g('pprice')) };
   v.exit = { date: g('xdate'), km: num(g('xkm')), price: num(g('xprice')) };
   v.updatedAt = Date.now();
   await dbPut('vehicles', v);
+  var nAtt = await attCommit('vehicle', v.id, v.id, 'Carte grise ' + v.name);
   await reload();
   closeSheet();
   if (state.tab === 'vehicle' || !old) go('vehicle', v.id); else render();
-  toast('Fiche enregistrée');
+  toast('Fiche enregistrée' + (nAtt ? ' (' + nAtt + ' pièce(s) jointe(s) ajoutée(s))' : ''));
 }
 
 function readingForm(vehicleId, readingId) {
