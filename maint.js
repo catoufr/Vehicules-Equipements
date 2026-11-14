@@ -43,7 +43,12 @@ function maintVehicleSection(v) {
   var h = '<h2>Entretiens (' + ms.length + ')</h2><div class="actions"><button data-act="addMaint" data-id="' + esc(v.id) + '">＋ Entretien</button></div>';
   h += ms.length ? '<div class="card list">' + ms.map(function (m) { return maintItem(m, false); }).join('') + '</div>' : '<div class="card muted">Aucun entretien enregistré.</div>';
   h += '<h2>Dépenses et achats annexes (' + es.length + ')</h2><div class="actions"><button data-act="addExp" data-id="' + esc(v.id) + '">＋ Dépense</button><button data-act="addAnnexe" data-id="' + esc(v.id) + '">＋ Achat annexe</button></div>';
-  h += es.length ? '<div class="card list">' + es.map(function (e) { return expItem(e, false); }).join('') + '</div>' : '<div class="card muted">Aucune dépense (assurance, péage, protège-écran…).</div>';
+  h += es.length ? '<div class="card list">' + es.map(function (e) { return expItem(e, false); }).join('') + '</div>' : '<div class="card muted">' + (v.equip ? 'Aucune dépense (pièces, intervention…).' : 'Aucune dépense (assurance, péage, protège-écran…).') + '</div>';
+  if (v.equip) {
+    var pp = v.purchase && v.purchase.price != null ? v.purchase.price : 0;
+    h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Achat de l\'équipement', pp ? fmtEur(pp) : ''], ['Fioul (remplissages de cuve)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Total (achat compris)', fmtEur(pp + en + mt + ex + an)]]) + '</div>';
+    return h;
+  }
   h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Énergie (pleins et recharges)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Assurance (au prorata)', fmtEur(as)], ['Total (hors achat du véhicule)', fmtEur(en + mt + ex + an + as)]]) + '</div>';
   return h;
 }

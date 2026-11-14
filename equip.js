@@ -81,7 +81,7 @@ function viewEquip(v) {
   h += '<h2>Fiche technique</h2><div class="card">' + kv([
     ['Type', v.type], ['Marque', v.make], ['Modèle', v.model], ['Puissance', v.powerKw ? v.powerKw + ' kW' : ''], ['Combustible', v.energy],
     ['Capacité de la cuve', v.capacity], ['Emplacement', v.place], ['Mise en service', v.since ? fmtDate(v.since) : ''],
-    ['N° de série', v.vin]].concat((v.extra || []).map(function (e) { return [e.k, e.v]; }))) + '</div>';
+    ['N° de série', v.vin], ['Prix d\'achat', (v.purchase || {}).price != null ? fmtEur(v.purchase.price) : ''], ['Date d\'achat', (v.purchase || {}).date ? fmtDate(v.purchase.date) : '']].concat((v.extra || []).map(function (e) { return [e.k, e.v]; }))) + '</div>';
   if (v.notes) h += '<h2>Remarques</h2><div class="card" style="white-space:pre-wrap">' + esc(v.notes) + '</div>';
   if (as.length) h += '<h2>Documents</h2><div class="card list">' + as.map(function (a) {
     return '<div class="item"><div>' + (/^image\//.test(a.mime) ? '🖼 ' : '📄 ') + esc(a.name) + (a.driveId ? '' : ' <span class="tag old">à envoyer</span>') + '</div><button class="link" data-act="attView" data-id="' + esc(a.id) + '">Voir</button></div>';
@@ -108,6 +108,8 @@ function equipForm(id) {
     fld('Capacité de la cuve (ex. 1 500 L)', 'capacity', v.capacity) +
     fld('Emplacement', 'place', v.place, { ph: 'Cave, garage…' }) +
     fld('Mise en service', 'since', v.since, { type: 'date' }) +
+    fld('Prix d\'achat (€)', 'price', (v.purchase || {}).price, { inputmode: 'decimal' }) +
+    fld('Date d\'achat', 'pdate', (v.purchase || {}).date, { type: 'date' }) +
     fld('N° de série (facultatif)', 'vin', v.vin) +
     '</fieldset><h2>Documents</h2><div id="attBox"></div>' +
     '<label for="f_notes">Remarques</label><textarea id="f_notes" name="notes">' + esc(v.notes || '') + '</textarea>' +
@@ -121,6 +123,7 @@ async function saveEquip(form) {
   var v = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now(), purchase: {}, exit: {}, extra: [] };
   Object.assign(v, { equip: true, name: g('name'), type: g('type'), energy: g('energy') || 'Fioul', status: g('status') || 'actuel', make: g('make'), model: g('model'),
     powerKw: g('powerKw'), capacity: g('capacity'), place: g('place'), since: g('since'), vin: g('vin'), notes: g('notes'), updatedAt: Date.now() });
+  v.purchase = Object.assign({}, v.purchase || {}, { price: num(g('price')), date: g('pdate') });
   if (!v.fuel && /fioul/i.test(v.energy)) v.fuel = 'Fioul';
   await dbPut('vehicles', v);
   await attCommit('vehicle', v.id, v.id, v.name);
