@@ -222,21 +222,45 @@ async function removePrice(id, quiet) {
   if (!quiet) { await reload(); closeSheet(); render(); }
 }
 function bulkForm() {
-  openSheet('<h1>Coller une liste de prix</h1><form id="bform"><div class="muted">Une ligne par prix : <b>AAAA-MM ; Carburant ; prix</b> (séparateur « ; » ou tabulation). Exemple :<br>2026-03 ; Gazole ; 1,789<br>2026-03 ; SP95-E10 ; 1,842<br>Carburants admis : ' + FUELS.join(', ') + '.</div>' +
+  openSheet('<h1>Coller une liste de prix</h1><form id="bform"><div class="muted">Deux formats acceptés. <b>1) Tableau</b> avec une ligne d\'en-tête : <b>Mois,Diesel_EUR_L,SP95_E10_EUR_L,E85_EUR_L</b> puis <b>2022-01,1.609,1.666,0.709</b>… <b>2) Une ligne par prix</b> : <b>AAAA-MM ; Carburant ; prix</b>. Exemple :<br>2026-03 ; Gazole ; 1,789<br>2026-03 ; SP95-E10 ; 1,842<br>Carburants admis : ' + FUELS.join(', ') + '.</div>' +
     '<textarea name="txt" rows="10" style="min-height:180px" placeholder="2026-03 ; Gazole ; 1,789"></textarea>' +
     '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Importer</button></div></form>');
 }
+var FUEL_ALIAS = { diesel: 'Gazole', gazole: 'Gazole', sp95: 'SP95', sp95_e10: 'SP95-E10', 'sp95-e10': 'SP95-E10', e10: 'SP95-E10', sp98: 'SP98', e85: 'E85', gpl: 'GPL', gplc: 'GPL', 'gpl-c': 'GPL' };
+function fuelFromHeader(h) { var k = String(h || '').toLowerCase().replace(/_?(eur|€)(_?l)?(\/l)?$/i, '').replace(/[\s]/g, '').replace(/_+$/, ''); return FUEL_ALIAS[k] || FUEL_ALIAS[k.replace(/_/g, '-')] || null; }
+// Lit soit « AAAA-MM ; Carburant ; prix » (une ligne par prix), soit un tableau « Mois, Diesel_EUR_L, SP95_E10_EUR_L, E85_EUR_L … »
+function parsePriceList(text) {
+  var lines = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean), items = [], bad = [];
+  var first = lines[0] || '', wide = /^mois\s*[,;\t]/i.test(first) ? first.split(/\s*[,;\t]\s*/).map(fuelFromHeader) : null;
+  if (wide) lines = lines.slice(1);
+  lines.forEach(function (l) {
+    if (wide) {
+      var c = l.split(/\s*[,;\t]\s*/), m = (c[0] || '').trim(), n = 0;
+      if (!/^\d{4}-\d{2}$/.test(m)) { bad.push(l); return; }
+      wide.forEach(function (fu, i) { if (i === 0 || !fu) return; var p = num(c[i]); if (p > 0) { items.push({ m: m, f: fu, p: p }); n++; } });
+      if (!n) bad.push(l);
+      return;
+    }
+    var c2 = l.split(/\s*[;\t]\s*/), m2 = (c2[0] || '').trim(), fi = FUELS.map(function (f) { return f.toLowerCase(); }).indexOf((c2[1] || '').trim().toLowerCase()), p2 = num(c2[2]);
+    if (/^\d{4}-\d{2}$/.test(m2) && fi >= 0 && p2 > 0) items.push({ m: m2, f: FUELS[fi], p: p2 }); else bad.push(l);
+  });
+  return { items: items, bad: bad, wide: !!wide };
+}
 async function saveBulk(form) {
-  var lines = (new FormData(form).get('txt') || '').toString().split(/\r?\n/), ok = 0, bad = [];
-  var up = FUELS.map(function (f) { return f.toLowerCase(); });
-  for (var i = 0; i < lines.length; i++) {
-    var l = lines[i].trim(); if (!l) continue;
-    var c = l.split(/\s*[;\t]\s*/), m = (c[0] || '').trim(), fi = up.indexOf((c[1] || '').trim().toLowerCase()), p = num(c[2]);
-    if (/^\d{4}-\d{2}$/.test(m) && fi >= 0 && p > 0) { await putPrice(m, FUELS[fi], p); ok++; } else bad.push(l);
-  }
-  await reload(); closeSheet(); render();
-  toast(ok + ' prix importé(s)' + (bad.length ? ', ' + bad.length + ' ligne(s) ignorée(s)' : ''));
-  if (bad.length) setTimeout(function () { alert('Lignes ignorées (format non reconnu) :\n\n' + bad.slice(0, 10).join('\n')); }, 300);
+  var r = parsePriceList(new FormData(form).get('txt'));
+  if (!r.items.length) { toast('Aucun prix reconnu'); return; }
+  var changed = r.items.filter(function (x) { var o = data.prices.filter(function (p) { return p.id === x.m + '_' + x.f; })[0]; return o && o.price !== x.p; }).length;
+  if (changed && !confirm(changed + ' prix déjà saisi(s) seront remplacés par ceux de la liste. Continuer ?')) return;
+  var now = Date.now(), t = db.transaction(['prices', 'deleted'], 'readwrite'), byId = {};
+  data.prices.forEach(function (p) { byId[p.id] = p; });
+  r.items.forEach(function (x) {
+    var id = x.m + '_' + x.f, o = byId[id], rec = o ? Object.assign({}, o) : { id: id, createdAt: now };
+    rec.month = x.m; rec.fuel = x.f; rec.price = x.p; rec.updatedAt = now;
+    t.objectStore('prices').put(rec); t.objectStore('deleted').delete(id);
+  });
+  await done(t); await reload(); closeSheet(); render();
+  toast(r.items.length + ' prix importé(s)' + (r.bad.length ? ', ' + r.bad.length + ' ligne(s) ignorée(s)' : ''));
+  if (r.bad.length) setTimeout(function () { alert('Lignes ignorées (format non reconnu) :\n\n' + r.bad.slice(0, 10).join('\n')); }, 300);
 }
 
 /* ---------- Événements ---------- */
