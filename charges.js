@@ -115,7 +115,9 @@ function evKm(v) {
   if (v.manualConso > 0 && price != null) o.use = v.manualConso / 100 * price;
   var pts = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
   if (pts.length >= 2) {
-    var p0 = pts[0], p1 = pts[pts.length - 1], km = p1.km - p0.km;
+    var first = cs.reduce(function (m, c) { return c.date < m ? c.date : m; }, cs[0].date), p0 = pts[0], p1 = pts[pts.length - 1];
+    pts.forEach(function (p) { if (p.date <= first) p0 = p; }); // dernier relevé avant (ou le jour de) la 1re recharge : on ne compte pas les km d'avant les recharges
+    var km = p1.km - p0.km;
     if (km > 0) {
       var e2 = 0; cs.forEach(function (c) { if (c.date >= p0.date && c.date <= p1.date) { var i = chargeInfo(c); if (i.cost != null) e2 += i.cost; } });
       if (e2 > 0) { o.real = e2 / km; o.km = km; o.from = p0.date; o.to = p1.date; }
