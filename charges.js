@@ -35,6 +35,17 @@ function dayStr(day) { return new Date(day * 86400000).toISOString().slice(0, 10
 // Répartition d'une recharge : kWh répartis à égalité sur chaque minute ; chaque minute prend le tarif de sa date
 function chargeInfo(c) {
   var a = dtParse(c.start), b = dtParse(c.end), out = { cost: null, hc: null, hp: null, auto: false, missing: false };
+  if (c.forceHC && c.kwh > 0 && a != null) { // session longue forcée : 100 % HC au tarif de la date de début
+    var tf = tariffFor(c.start.slice(0, 10));
+    if (!tf) out.missing = true;
+    else {
+      var pr = (tf.slots || []).length ? Math.min.apply(null, tf.slots.map(function (x) { return x.price; })) : tf.hp;
+      out.cost = c.kwh * pr; out.hc = c.kwh; out.hp = 0; out.auto = true;
+    }
+    if (c.override != null) { out.cost = c.override; out.auto = false; }
+    else if (c.place && c.place !== 'maison') { out.cost = null; out.auto = false; }
+    return out;
+  }
   if (a != null && b != null && c.kwh > 0) {
     var n = Math.max(1, b - a), per = c.kwh / n, cost = 0, hc = 0, hp = 0, miss = 0, cache = {};
     for (var i = 0; i < n; i++) {
@@ -50,6 +61,7 @@ function chargeInfo(c) {
   else if (c.place && c.place !== 'maison') { out.cost = null; out.auto = false; }
   return out;
 }
+function longCharge(c) { var a = dtParse(c.start), b = dtParse(c.end); return a != null && b != null && b - a > 480; }
 function vehCharges(id) { return data.charges.filter(function (c) { return c.vehicleId === id; }).sort(function (a, b) { return b.start.localeCompare(a.start); }); }
 function chargesCost(id) { return vehCharges(id).reduce(function (s, c) { var i = chargeInfo(c); return s + (i.cost || 0); }, 0); }
 
@@ -57,7 +69,7 @@ function chargesCost(id) { return vehCharges(id).reduce(function (s, c) { var i 
 function chargeItem(c, showVeh) {
   var i = chargeInfo(c), pl = { maison: 'maison', borne: 'borne publique', autre: 'autre' }[c.place] || c.place;
   return '<div class="item"><div><b>' + fmtDate(c.start.slice(0, 10)) + '</b> ' + c.start.slice(11) + ' → ' + c.end.slice(11) + ' · ' + fmtKwh(c.kwh) + (showVeh ? ' · ' + esc(vehName(c.vehicleId)) : '') +
-    '<div class="muted">' + [pl, i.cost != null ? fmtEur(i.cost) + (i.auto ? '' : ' (saisi)') : (c.place === 'maison' ? 'tarif manquant' : ''), i.hc != null && i.cost != null ? 'HC ' + fmtKwh(i.hc) + ' · HP ' + fmtKwh(i.hp) : '', c.note || ''].filter(Boolean).join(' · ') + '</div></div>' +
+    '<div class="muted">' + [pl, i.cost != null ? fmtEur(i.cost) + (i.auto ? '' : ' (saisi)') : (c.place === 'maison' ? 'tarif manquant' : ''), c.forceHC ? '100 % HC (forcé)' : (i.hc != null && i.cost != null ? 'HC ' + fmtKwh(i.hc) + ' · HP ' + fmtKwh(i.hp) : ''), c.note || ''].filter(Boolean).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editCharge" data-id="' + esc(c.id) + '">Modifier</button></div></div>';
 }
 // Comparaison coût réel (recharges) / coût d'utilisation (conso moyenne × km), sur la période où les deux sont connus
@@ -180,6 +192,7 @@ function chargeForm(vehicleId, id) {
     '<div class="pair"><div>' + fld('Fin : date', 'ed', c ? c.end.slice(0, 10) : t0, { type: 'date', req: true }) + '</div><div>' + fld('Fin : heure', 'eh', c ? c.end.slice(11) : '', { type: 'time', req: true }) + '</div></div>' +
     fld('Énergie rechargée (kWh)', 'kwh', c ? String(c.kwh).replace('.', ',') : '', { inputmode: 'decimal', req: true }) +
     fld('Montant payé (€) — vide = calcul automatique à la maison', 'override', c && c.override != null ? String(c.override).replace('.', ',') : '', { inputmode: 'decimal' }) +
+    '<div id="cLong" class="card warn" hidden><div>Session de plus de 8 h : probablement une erreur (câble resté branché ?).</div><label style="display:flex;gap:10px;align-items:center;color:var(--text)"><input type="checkbox" name="forceHC" style="width:auto;min-height:0"' + (c && c.forceHC ? ' checked' : '') + '> Forcer en 100 % heures creuses, au tarif de la date de début</label></div>' +
     '<div class="card"><div class="muted">Coût calculé</div><div class="big" id="ccalc">–</div><div class="muted" id="csplit"></div></div>' +
     fld('Kilométrage au compteur (facultatif)', 'km', '', { inputmode: 'numeric' }) +
     fld('Remarque (pour qui ? facultatif)', 'note', c ? c.note : '') +
@@ -189,11 +202,11 @@ function chargeForm(vehicleId, id) {
 }
 function readCharge(form) {
   var fd = new FormData(form), g = function (k) { return (fd.get(k) || '').toString().trim(); };
-  return { vehicleId: g('vehicleId'), place: g('place'), start: g('sd') + ' ' + g('sh'), end: g('ed') + ' ' + g('eh'), kwh: num(g('kwh')), override: num(g('override')), note: g('note'), km: num(g('km')) };
+  return { forceHC: !!fd.get('forceHC') && longCharge({ start: g('sd') + ' ' + g('sh'), end: g('ed') + ' ' + g('eh') }), vehicleId: g('vehicleId'), place: g('place'), start: g('sd') + ' ' + g('sh'), end: g('ed') + ' ' + g('eh'), kwh: num(g('kwh')), override: num(g('override')), note: g('note'), km: num(g('km')) };
 }
 function chargeCalc() {
   var f = $('#cform'), o = $('#ccalc'); if (!f || !o) return;
-  var c = readCharge(f), i = chargeInfo(c);
+  var c = readCharge(f), i = chargeInfo(c), lg = $('#cLong'); if (lg) lg.hidden = !longCharge(c);
   o.textContent = i.cost != null ? fmtEur(i.cost) : (c.place === 'maison' ? (i.missing ? 'tarif manquant à cette date' : '–') : '–');
   $('#csplit').textContent = i.hc != null ? 'HC ' + fmtKwh(i.hc) + ' · HP ' + fmtKwh(i.hp) : '';
 }
@@ -204,7 +217,7 @@ async function saveCharge(form) {
   if (b < a) { toast('La fin précède le début'); return; }
   var old = id ? data.charges.filter(function (x) { return x.id === id; })[0] : null, km = c.km;
   var r = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now(), source: 'manuel' };
-  Object.assign(r, { vehicleId: c.vehicleId, place: c.place, start: c.start, end: c.end, kwh: c.kwh, override: c.override, note: c.note, date: c.start.slice(0, 10), updatedAt: Date.now() });
+  Object.assign(r, { vehicleId: c.vehicleId, place: c.place, start: c.start, end: c.end, kwh: c.kwh, override: c.override, note: c.note, forceHC: c.forceHC, date: c.start.slice(0, 10), updatedAt: Date.now() });
   await dbPut('charges', r);
   if (km != null && r.vehicleId !== OTHER) {
     km = Math.round(km);
@@ -264,18 +277,20 @@ function importPreview(defVeh) {
     var miss = !tariffFor(x.start.slice(0, 10));
     h += '<div class="item" style="flex-direction:column;align-items:stretch"><label style="display:flex;gap:10px;align-items:center;margin:0;color:var(--text)"><input type="checkbox" name="ck" value="' + i + '" checked style="width:auto;min-height:0">' +
       '<span><b>' + fmtDate(x.start.slice(0, 10)) + '</b> ' + x.start.slice(11) + ' → ' + x.end.slice(11) + ' · ' + fmtKwh(x.kwh) + (miss ? ' <span class="tag old">tarif manquant</span>' : '') + '</span></label>' +
-      vehSelectHtml('rv' + i, defVeh).replace('<select', '<select data-row="1"') + '</div>';
+      vehSelectHtml('rv' + i, defVeh).replace('<select', '<select data-row="1"') +
+      (longCharge(x) ? '<div class="card warn" style="margin:8px 0 0"><div>Session de ' + Math.round((dtParse(x.end) - dtParse(x.start)) / 6) / 10 + ' h (plus de 8 h) : probablement une erreur de branchement. Sans option, elle est calculée minute par minute en HP et HC.</div>' +
+        '<label style="display:flex;gap:10px;align-items:center;color:var(--text)"><input type="checkbox" name="fh" value="' + i + '" style="width:auto;min-height:0"> Forcer en 100 % heures creuses, au tarif de la date de début</label></div>' : '') + '</div>';
   });
   h += '</div><div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Importer la sélection</button></div></form>';
   openSheet(h);
 }
 async function saveImportPreview(form) {
-  var fd = new FormData(form), idx = fd.getAll('ck').map(Number);
+  var fd = new FormData(form), idx = fd.getAll('ck').map(Number), fh = fd.getAll('fh').map(Number);
   if (!idx.length) { toast('Aucune recharge cochée'); return; }
   var now = Date.now(), t = db.transaction(['charges'], 'readwrite'), kwh = 0, byV = {};
   idx.forEach(function (i) {
     var r = IMP.rows[i], vid = fd.get('rv' + i); kwh += r.kwh; byV[vid] = (byV[vid] || 0) + 1;
-    t.objectStore('charges').put({ id: uid(), vehicleId: vid, place: 'maison', start: r.start, end: r.end, kwh: r.kwh, override: null, note: vid === OTHER ? 'autre personne' : '', date: r.start.slice(0, 10), source: 'csv', createdAt: now, updatedAt: now });
+    t.objectStore('charges').put({ id: uid(), vehicleId: vid, place: 'maison', start: r.start, end: r.end, kwh: r.kwh, override: null, note: vid === OTHER ? 'autre personne' : '', date: r.start.slice(0, 10), source: 'csv', forceHC: fh.indexOf(i) >= 0 && longCharge(r), createdAt: now, updatedAt: now });
   });
   await done(t); IMP = null; await reload(); closeSheet(); render();
   toast(idx.length + ' recharge(s) importée(s) (' + fmtKwh(kwh) + ')');
