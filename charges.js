@@ -106,6 +106,23 @@ function evStats(v) {
   if (o.useCost != null) o.useKm = o.useCost / km;
   return o;
 }
+// Prix au km de l'électrique, sans exiger de relevé après la 1re recharge :
+// réel = coût des recharges de la période couverte par les relevés ÷ km de cette période ; utilisation = conso moyenne × prix moyen payé.
+function evKm(v) {
+  var cs = vehCharges(v.id), o = { real: null, use: null, km: null }; if (!cs.length) return o;
+  var eur = 0, ek = 0; cs.forEach(function (c) { var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; ek += c.kwh; } });
+  var price = ek > 0 ? eur / ek : (v.manualPrice > 0 ? v.manualPrice : null);
+  if (v.manualConso > 0 && price != null) o.use = v.manualConso / 100 * price;
+  var pts = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
+  if (pts.length >= 2) {
+    var p0 = pts[0], p1 = pts[pts.length - 1], km = p1.km - p0.km;
+    if (km > 0) {
+      var e2 = 0; cs.forEach(function (c) { if (c.date >= p0.date && c.date <= p1.date) { var i = chargeInfo(c); if (i.cost != null) e2 += i.cost; } });
+      if (e2 > 0) { o.real = e2 / km; o.km = km; o.from = p0.date; o.to = p1.date; }
+    }
+  }
+  return o;
+}
 function chargeStats(v) {
   var cs = vehCharges(v.id); if (!cs.length) return '<div class="muted">Aucune recharge enregistrée.</div>';
   var kwh = 0, eur = 0, eurKwh = 0, home = 0, hc = 0, hcBase = 0;
@@ -113,6 +130,9 @@ function chargeStats(v) {
   var h = kv([['Recharges', String(cs.length)], ['Énergie rechargée (réelle)', fmtKwh(kwh)], ['Coût réel (recharges)', fmtEur(eur)], ['Prix moyen', eurKwh ? fmtPk(eur / eurKwh) : ''],
     ['Part à la maison', Math.round(home / kwh * 100) + ' %'], ['Part en heures creuses', hcBase ? Math.round(hc / hcBase * 100) + ' %' : '']]);
   if (v.id === OTHER) return h;
+  var k = evKm(v);
+  if (k.real != null || k.use != null) h += kv([['Coût réel au km (recharges)', k.real != null ? fmtM(k.real) : ''], ['Coût d\'utilisation au km (conso moyenne)', k.use != null ? fmtM(k.use) : '']]) +
+    '<div class="muted">' + (k.real != null ? 'Réel : recharges du ' + fmtDate(k.from) + ' au ' + fmtDate(k.to) + ' ÷ ' + fmtKm(k.km) + '. ' : 'Le coût réel au km apparaît dès qu\'il y a deux relevés kilométriques. ') + 'Utilisation : conso moyenne × prix moyen payé.</div>';
   var e = evStats(v);
   if (e) {
     h += '<h3>Coût réel et coût d\'utilisation (du ' + fmtDate(e.from) + ' au ' + fmtDate(e.to) + ', ' + fmtKm(e.km) + ')</h3>' + kv([
