@@ -108,7 +108,7 @@ function summaryCard(v) {
     if (cs.length) {
       var kwh = 0, eur = 0, ek = 0; cs.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; ek += c.kwh; } });
       rows.push(['Énergie rechargée', fmtKwh(kwh)], ['Prix moyen payé', ek ? fmtPk(eur / ek) : ''], ['Coût réel (recharges)', fmtEur(eur)]);
-      if (e) rows.push(['Conso réelle', fmtKwh(e.real100).replace(' kWh', ' kWh/100 km')]);
+      if (e) { rows.push(['Conso réelle', fmtKwh(e.real100).replace(' kWh', ' kWh/100 km')]); if (e.realKm != null) rows.push(['Prix réel au km', fmtM(e.realKm)]); if (e.useKm != null) rows.push(['Prix d\'utilisation au km', fmtM(e.useKm)]); }
       note = 'Valeurs réelles (recharges enregistrées).';
     }
   } else if (v.mode === 'manual') {

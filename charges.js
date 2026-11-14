@@ -101,6 +101,9 @@ function evStats(v) {
     var price = eurKwh > 0 ? eur / eurKwh : (v.manualPrice > 0 ? v.manualPrice : null);
     if (price != null) { o.useCost = o.useKwh * price; o.realCost = eurKwh > 0 ? eur / eurKwh * kwh : null; }
   }
+  var rc = o.realCost != null ? o.realCost : (eurKwh > 0 ? eur : null);
+  if (rc != null) o.realKm = rc / km;
+  if (o.useCost != null) o.useKm = o.useCost / km;
   return o;
 }
 function chargeStats(v) {
@@ -117,7 +120,9 @@ function chargeStats(v) {
       ['Conso moyenne indiquée', e.use100 ? fmtKwh(e.use100).replace(' kWh', ' kWh/100 km') : ''],
       ['Pertes estimées (chargeur + voiture)', e.loss != null ? (e.loss >= 0 ? '+' : '') + Math.round(e.loss * 1000) / 10 + ' %' : ''],
       ['Coût réel (recharges)', e.realCost != null ? fmtEur(e.realCost) : fmtEur(e.eur)],
-      ['Coût d\'utilisation (conso moyenne)', e.useCost != null ? fmtEur(e.useCost) : '']]) +
+      ['Prix réel au km (recharges)', e.realKm != null ? fmtM(e.realKm) : ''],
+      ['Coût d\'utilisation (conso moyenne)', e.useCost != null ? fmtEur(e.useCost) : ''],
+      ['Prix d\'utilisation au km', e.useKm != null ? fmtM(e.useKm) : '']]) +
       '<div class="muted">Le coût réel vient des recharges ; il est le seul compté dans les dépenses cumulées. Le coût d\'utilisation (conso moyenne × km) est indicatif.</div>';
   } else if (v.manualConso > 0) h += '<div class="muted">La comparaison coût réel / coût d\'utilisation demande au moins deux relevés kilométriques après la première recharge.</div>';
   return h;
