@@ -16,11 +16,12 @@ function equipCard(v) {
     '<div style="text-align:right"><div class="big">' + (n ? n + ' remplissage' + (n > 1 ? 's' : '') : '') + '</div>' +
     '<div class="muted">' + (last ? 'dernier le ' + fmtDate(last.date) : '') + '</div></div></div></div>';
 }
-function equipsSection() {
+function viewEquips() {
   var cur = equipList('actuel'), old = equipList('ancien');
-  var h = '<h2>Équipements</h2><div class="actions"><button data-act="addEquip">＋ Équipement (chaudière…)</button></div>';
-  if (!cur.length && !old.length) return h + '<div class="card empty">Aucun équipement. Ajoutez par exemple votre chaudière fioul : entretien et remplissages de cuve.</div>';
-  return h + cur.concat(old).map(equipCard).join('');
+  var h = '<h1>Équipements</h1><div class="actions"><button class="primary" data-act="addEquip">＋ Ajouter un équipement</button></div>';
+  h += '<h2>Actuels</h2>' + (cur.length ? cur.map(equipCard).join('') : '<div class="card empty">Aucun équipement. Ajoutez par exemple votre chaudière fioul : entretien et remplissages de cuve.</div>');
+  if (old.length) h += '<h2>Anciens</h2>' + old.map(equipCard).join('');
+  return h;
 }
 
 /* ---------- Statistiques de cuve ---------- */
@@ -74,7 +75,7 @@ function cuveSection(v) {
 /* ---------- Vue d'un équipement ---------- */
 function viewEquip(v) {
   var old = (v.status || 'actuel') === 'ancien', as = attsOf('vehicle', v.id);
-  var h = '<div class="actions"><button class="link" data-act="tab" data-tab="vehicles">‹ Véhicules</button></div>' +
+  var h = '<div class="actions"><button class="link" data-act="tab" data-tab="equips">‹ Équipements</button></div>' +
     '<h1>🔥 ' + esc(v.name) + (old ? '<span class="tag old">ancien</span>' : '<span class="tag">actuel</span>') + '</h1>';
   h += '<div class="actions"><button data-act="editEquip" data-id="' + esc(v.id) + '">Modifier la fiche</button></div>';
   h += '<h2>Fiche technique</h2><div class="card">' + kv([
