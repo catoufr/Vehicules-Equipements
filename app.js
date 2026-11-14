@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.3.0';
+var APP_VERSION = '0.4.0';
 var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -41,11 +41,11 @@ function toast(msg) {
 
 /* ---------- Base locale ---------- */
 var db = null;
-var data = { vehicles: [], readings: [], fills: [], prices: [], deleted: [], lastExport: null };
+var data = { vehicles: [], readings: [], fills: [], prices: [], maints: [], expenses: [], deleted: [], lastExport: null };
 
 function openDB() {
   return new Promise(function (res, rej) {
-    var r = indexedDB.open(DB_NAME, 2);
+    var r = indexedDB.open(DB_NAME, 3);
     r.onupgradeneeded = function () {
       var d = r.result, has = function (n) { return d.objectStoreNames.contains(n); };
       if (!has('vehicles')) d.createObjectStore('vehicles', { keyPath: 'id' });
@@ -53,6 +53,8 @@ function openDB() {
       if (!has('deleted')) d.createObjectStore('deleted', { keyPath: 'id' }); // suppressions, pour la synchro
       if (!has('meta')) d.createObjectStore('meta', { keyPath: 'key' });
       if (!has('fills')) d.createObjectStore('fills', { keyPath: 'id' });   // pleins (0.3)
+      if (!has('maints')) d.createObjectStore('maints', { keyPath: 'id' });     // entretiens (0.4)
+      if (!has('expenses')) d.createObjectStore('expenses', { keyPath: 'id' }); // achats annexes et autres dépenses (0.4)
       if (!has('prices')) d.createObjectStore('prices', { keyPath: 'id' }); // prix moyens mensuels (0.3)
     };
     r.onsuccess = function () { res(r.result); };
@@ -73,6 +75,8 @@ async function reload() {
   data.deleted = await rq(st('deleted').getAll());
   data.fills = await rq(st('fills').getAll());
   data.prices = await rq(st('prices').getAll());
+  data.maints = await rq(st('maints').getAll());
+  data.expenses = await rq(st('expenses').getAll());
   var m = await rq(st('meta').get('lastExport'));
   data.lastExport = m ? m.value : null;
 }
@@ -138,7 +142,7 @@ function render() {
   else if (state.tab === 'vehicles') html = viewVehicles();
   else if (state.tab === 'vehicle') html = viewVehicle(state.vehicleId);
   else if (state.tab === 'energy') html = viewEnergy();
-  else if (state.tab === 'maint') html = viewSoon('Entretiens', 'Le carnet d\'entretien, les prix détaillés et les factures jointes arrivent à l\'étape 0.4.');
+  else if (state.tab === 'maint') html = viewMaint();
   else if (state.tab === 'data') html = viewData();
   main.innerHTML = html;
   if (window.afterRender) window.afterRender();
@@ -166,7 +170,7 @@ function viewHome() {
     '<button class="primary" data-act="addReading">＋ Kilométrage</button>' +
     '<button data-act="addVehicle">＋ Véhicule</button>' +
     '<button data-act="addFill">＋ Plein</button>' +
-    '<button disabled title="Étape 0.4">＋ Entretien</button></div>';
+    '<button data-act="addMaint">＋ Entretien</button></div>';
   var cur = sortedVehicles('actuel');
   h += '<h2>Mes véhicules</h2>';
   if (!cur.length) h += '<div class="card empty">Aucun véhicule pour l\'instant.<div class="actions"><button class="primary" data-act="addVehicle">Ajouter mon premier véhicule</button></div></div>';
@@ -225,7 +229,7 @@ function viewVehicle(id) {
     h += '<div class="item"><div><b>' + fmtKm(r.km) + '</b><div class="muted">' + fmtDate(r.date) + '</div></div>' +
       '<div><button class="link" data-act="editReading" data-id="' + esc(r.id) + '">Modifier</button></div></div>';
   });
-  h += '</div>' + energyVehicleSection(v);
+  h += '</div>' + energyVehicleSection(v) + maintVehicleSection(v);
   h += '<h2>Zone sensible</h2><div class="actions"><button class="danger" data-act="delVehicle" data-id="' + esc(id) + '">Supprimer ce véhicule</button></div>';
   return h;
 }
@@ -375,7 +379,11 @@ async function deleteVehicle(id) {
   var rs = data.readings.filter(function (r) { return r.vehicleId === id; });
   var fs = data.fills.filter(function (r) { return r.vehicleId === id; });
   if (!confirm('Supprimer « ' + v.name + ' », ses ' + rs.length + ' relevé(s) et ses ' + fs.length + ' plein(s) ? Cette action est définitive.')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'deleted'], 'readwrite'), now = Date.now();
+  var ms = data.maints.filter(function (r) { return r.vehicleId === id; }), es = data.expenses.filter(function (r) { return r.vehicleId === id; });
+  if ((ms.length || es.length) && !confirm('Cela supprime aussi ' + ms.length + ' entretien(s) et ' + es.length + ' dépense(s) / achat(s) annexe(s). Continuer ?')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'maints', 'expenses', 'deleted'], 'readwrite'), now = Date.now();
+  ms.forEach(function (r) { t.objectStore('maints').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'maint', deletedAt: now }); });
+  es.forEach(function (r) { t.objectStore('expenses').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'expense', deletedAt: now }); });
   fs.forEach(function (r) { t.objectStore('fills').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'fill', deletedAt: now }); });
   t.objectStore('vehicles').delete(id);
   t.objectStore('deleted').put({ id: id, kind: 'vehicle', deletedAt: now });
@@ -387,7 +395,7 @@ async function deleteVehicle(id) {
 function buildExport() {
   return JSON.stringify({
     format: FORMAT, formatVersion: 1, appVersion: APP_VERSION, exportedAt: new Date().toISOString(),
-    vehicles: data.vehicles, readings: data.readings, fills: data.fills, prices: data.prices
+    vehicles: data.vehicles, readings: data.readings, fills: data.fills, prices: data.prices, maints: data.maints, expenses: data.expenses
   }, null, 1);
 }
 async function markExported() { await dbPut('meta', { key: 'lastExport', value: Date.now() }); await reload(); }
@@ -409,6 +417,8 @@ async function importText(text) {
   if (!j || j.format !== FORMAT || !Array.isArray(j.vehicles)) { toast('Ce n\'est pas une sauvegarde de cette appli'); return; }
   var vs = j.vehicles, rs = Array.isArray(j.readings) ? j.readings : [];
   var fl = Array.isArray(j.fills) ? j.fills : [], pr = Array.isArray(j.prices) ? j.prices : [];
+  var ml = Array.isArray(j.maints) ? j.maints : [], el = Array.isArray(j.expenses) ? j.expenses : [], byM = {}, byE = {};
+  data.maints.forEach(function (x) { byM[x.id] = x; }); data.expenses.forEach(function (x) { byE[x.id] = x; });
   var byV = {}, byR = {}, byF = {}, byP = {};
   data.vehicles.forEach(function (x) { byV[x.id] = x; });
   data.readings.forEach(function (x) { byR[x.id] = x; });
@@ -419,9 +429,13 @@ async function importText(text) {
   var addR = rs.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byR[x.id]); });
   var addF = fl.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byF[x.id]); });
   var addP = pr.filter(function (x) { return x && x.id && x.fuel && x.month && newer(x, byP[x.id]); });
-  if (!addV.length && !addR.length && !addF.length && !addP.length) { toast('Rien de nouveau à importer'); return; }
-  if (!confirm('Importer ' + addV.length + ' véhicule(s), ' + addR.length + ' relevé(s), ' + addF.length + ' plein(s) et ' + addP.length + ' prix (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'deleted'], 'readwrite');
+  var addM = ml.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byM[x.id]); });
+  var addE = el.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byE[x.id]); });
+  if (!addV.length && !addR.length && !addF.length && !addP.length && !addM.length && !addE.length) { toast('Rien de nouveau à importer'); return; }
+  if (!confirm('Importer ' + addV.length + ' véhicule(s), ' + addR.length + ' relevé(s), ' + addF.length + ' plein(s) et ' + addP.length + ' prix, ' + addM.length + ' entretien(s) et ' + addE.length + ' dépense(s) (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted'], 'readwrite');
+  addM.forEach(function (x) { t.objectStore('maints').put(x); t.objectStore('deleted').delete(x.id); });
+  addE.forEach(function (x) { t.objectStore('expenses').put(x); t.objectStore('deleted').delete(x.id); });
   addF.forEach(function (x) { t.objectStore('fills').put(x); t.objectStore('deleted').delete(x.id); });
   addP.forEach(function (x) { t.objectStore('prices').put(x); t.objectStore('deleted').delete(x.id); });
   addV.forEach(function (x) { t.objectStore('vehicles').put(x); t.objectStore('deleted').delete(x.id); });
@@ -430,9 +444,9 @@ async function importText(text) {
 }
 async function wipe() {
   if (!confirm('Effacer TOUTES les données de cet appareil ?')) return;
-  if (!confirm('Dernière confirmation : véhicules, relevés, pleins et prix seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'deleted', 'meta'], 'readwrite');
-  ['vehicles', 'readings', 'fills', 'prices', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
+  if (!confirm('Dernière confirmation : véhicules, relevés, pleins, prix, entretiens et dépenses seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted', 'meta'], 'readwrite');
+  ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
   await done(t); await reload(); go('home'); toast('Données effacées');
 }
 

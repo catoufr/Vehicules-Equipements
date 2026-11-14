@@ -20,9 +20,9 @@ function fmtDT(v) { try { return new Date(v).toLocaleString('fr-FR', { dateStyle
 
 /* ---------- Données locales vues comme des « documents » ---------- */
 function updOf(o) { return Number(o && o.updatedAt) || Number(o && o.createdAt) || 0; }
-var STORES = { v: 'vehicles', r: 'readings', f: 'fills', p: 'prices' };
-var KINDS = { v: 'vehicle', r: 'reading', f: 'fill', p: 'price' };
-var KIND2KEY = { vehicle: 'v', reading: 'r', fill: 'f', price: 'p' };
+var STORES = { v: 'vehicles', r: 'readings', f: 'fills', p: 'prices', m: 'maints', e: 'expenses' };
+var KINDS = { v: 'vehicle', r: 'reading', f: 'fill', p: 'price', m: 'maint', e: 'expense' };
+var KIND2KEY = { vehicle: 'v', reading: 'r', fill: 'f', price: 'p', maint: 'm', expense: 'e' };
 function storeOf(key) { return STORES[key[0]]; }
 function kindOf(key) { return KINDS[key[0]]; }
 function listOf(key) { return data[storeOf(key)]; }
@@ -32,6 +32,8 @@ function localDocs() {
   data.readings.forEach(function (o) { l['r:' + o.id] = o; });
   data.fills.forEach(function (o) { l['f:' + o.id] = o; });
   data.prices.forEach(function (o) { l['p:' + o.id] = o; });
+  data.maints.forEach(function (o) { l['m:' + o.id] = o; });
+  data.expenses.forEach(function (o) { l['e:' + o.id] = o; });
   return l;
 }
 function tombMap() {
@@ -43,11 +45,11 @@ function docLabel(key, o) {
   if (!o) return key;
   if (key[0] === 'v') return o.name || 'véhicule';
   if (key[0] === 'p') return 'prix ' + o.fuel + ' ' + o.month;
-  return (key[0] === 'f' ? 'plein' : 'relevé') + ' du ' + fmtDate(o.date);
+  return ({ f: 'plein', m: 'entretien', e: 'dépense' }[key[0]] || 'relevé') + ' du ' + fmtDate(o.date);
 }
 function lastChange() {
   var m = 0;
-  data.vehicles.concat(data.readings, data.fills, data.prices).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
+  data.vehicles.concat(data.readings, data.fills, data.prices, data.maints, data.expenses).forEach(function (o) { var u = updOf(o); if (u > m) m = u; });
   (data.deleted || []).forEach(function (d) { if ((d.deletedAt || 0) > m) m = d.deletedAt; });
   return m;
 }
@@ -118,7 +120,7 @@ async function tx(stores, fn) { var t = db.transaction(stores, 'readwrite'); fn(
 function parseFiles(files) {
   var rdoc = {}, rtomb = {};
   files.forEach(function (f) {
-    var m = /^veh_([vrfp])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vrfp])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
+    var m = /^veh_([vrfpme])_(.+)\.json$/.exec(f.name), x = /^veh_x_([vrfpme])_(.+)$/.exec(f.name), u = Number(f.appProperties && f.appProperties.upd) || 0;
     if (m) rdoc[m[1] + ':' + m[2]] = { file: f, upd: u };
     else if (x) rtomb[x[1] + ':' + x[2]] = { file: f, upd: u };
   });
@@ -198,25 +200,26 @@ async function bkLoad() {
   } catch (e) { return null; }
 }
 async function safetyCopy(plan, mode) {
-  var vs = [], rs = [], fs = [], ps = [], to = { v: vs, r: rs, f: fs, p: ps };
+  var vs = [], rs = [], fs = [], ps = [], ms = [], es = [], to = { v: vs, r: rs, f: fs, p: ps, m: ms, e: es };
   plan.down.forEach(function (p) { if (p.had) to[p.key[0]].push(p.had); });
   plan.delLocal.forEach(function (p) { to[p.key[0]].push(p.o); });
-  if (!vs.length && !rs.length && !fs.length && !ps.length) return;
+  if (!vs.length && !rs.length && !fs.length && !ps.length && !ms.length && !es.length) return;
   var o = { k: 'last', at: Date.now(), reason: mode === 'recv' ? 'avant « Récupérer depuis le Drive »' : 'avant remplacement par le Drive',
     vehicles: JSON.parse(JSON.stringify(vs)), readings: JSON.parse(JSON.stringify(rs)),
-    fills: JSON.parse(JSON.stringify(fs)), prices: JSON.parse(JSON.stringify(ps)) };
+    fills: JSON.parse(JSON.stringify(fs)), prices: JSON.parse(JSON.stringify(ps)),
+    maints: JSON.parse(JSON.stringify(ms)), expenses: JSON.parse(JSON.stringify(es)) };
   await bkSave(o); G.bk = o;
 }
 async function restoreBackup() {
   var b = G.bk || await bkLoad();
   if (!b) { G.msg = 'Aucune copie de sécurité.'; gbox(); return; }
-  await tx(['vehicles', 'readings', 'fills', 'prices', 'deleted'], function (t) {
-    ['vehicles', 'readings', 'fills', 'prices'].forEach(function (n) {
+  await tx(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted'], function (t) {
+    ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses'].forEach(function (n) {
       (b[n] || []).forEach(function (o) { t.objectStore(n).put(o); t.objectStore('deleted').delete(o.id); });
     });
   });
   await reload();
-  G.msg = 'Copie de sécurité restaurée (' + b.vehicles.length + ' véhicule(s), ' + b.readings.length + ' relevé(s), ' + (b.fills || []).length + ' plein(s), ' + (b.prices || []).length + ' prix). Synchronisez pour l\'envoyer sur le Drive.';
+  G.msg = 'Copie de sécurité restaurée (' + b.vehicles.length + ' véhicule(s), ' + b.readings.length + ' relevé(s), ' + (b.fills || []).length + ' plein(s), ' + (b.prices || []).length + ' prix, ' + (b.maints || []).length + ' entretien(s), ' + (b.expenses || []).length + ' dépense(s)). Synchronisez pour l\'envoyer sur le Drive.';
   render();
 }
 
@@ -320,7 +323,7 @@ function gbox() {
     }
     h += '</div>';
   }
-  if (G.bk) h += '<p class="muted">Copie de sécurité sur cet appareil : ' + fmtDT(G.bk.at) + ' (' + esc(G.bk.reason) + ', ' + G.bk.vehicles.length + ' véhicule(s), ' + G.bk.readings.length + ' relevé(s), ' + (G.bk.fills || []).length + ' plein(s), ' + (G.bk.prices || []).length + ' prix). <button type="button" class="link" data-act="bkrestore">Restaurer</button></p>';
+  if (G.bk) h += '<p class="muted">Copie de sécurité sur cet appareil : ' + fmtDT(G.bk.at) + ' (' + esc(G.bk.reason) + ', ' + G.bk.vehicles.length + ' véhicule(s), ' + G.bk.readings.length + ' relevé(s), ' + (G.bk.fills || []).length + ' plein(s), ' + (G.bk.prices || []).length + ' prix, ' + (G.bk.maints || []).length + ' entretien(s), ' + (G.bk.expenses || []).length + ' dépense(s)). <button type="button" class="link" data-act="bkrestore">Restaurer</button></p>';
   h += '<label style="display:flex;gap:10px;align-items:flex-start;color:var(--text)"><input type="checkbox" data-g="auto" style="width:auto;min-height:0;margin-top:4px"' + (lsGet(AUTOKEY, false) ? ' checked' : '') + '> <span>Synchroniser à la première touche après l\'ouverture, si des modifications n\'ont pas été envoyées ou après plus de 6 h. Une fenêtre Google s\'ouvre alors brièvement.</span></label>';
   el.innerHTML = h;
 }

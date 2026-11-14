@@ -250,7 +250,7 @@ document.addEventListener('click', function (e) {
 });
 document.addEventListener('input', function (e) {
   var n = e.target && e.target.name;
-  if (n === 'liters' || n === 'ppl' || n === 'total') calcFill(n);
+  if ((n === 'liters' || n === 'ppl' || n === 'total') && $('#fform')) calcFill(n);
 });
 document.addEventListener('change', function (e) {
   var t = e.target; if (t && (t.id === 'f_vid' || t.id === 'f_date') && $('#fform')) fillHint();

@@ -70,3 +70,7 @@ legend { padding: 0 6px; font-weight: 600; }
   background: var(--bg); border-top: 1px solid var(--line); }
 .formbar > button { flex: 1; }
 nav#nav button.dirty span::after{content:'';display:inline-block;width:8px;height:8px;margin-left:2px;border-radius:50%;background:var(--warn);vertical-align:top}
+.lrow{display:grid;grid-template-columns:104px 1fr 84px auto;gap:6px;margin-top:6px}
+.lrow select,.lrow input{min-width:0;padding:8px}
+[hidden]{display:none!important}
+details.card summary{cursor:pointer}
