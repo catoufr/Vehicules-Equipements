@@ -87,10 +87,11 @@ function maintForm(vehicleId, id) {
     '<div class="pair"><div>' + fld('TVA (%) si HT', 'vat', m && m.vat != null ? m.vat : 20, { inputmode: 'decimal' }) + '</div><div>' + fld('Remise (€)', 'discount', m ? m.discount : '', { inputmode: 'decimal' }) + '</div></div>' +
     '<div class="card"><div class="muted">Total TTC calculé</div><div class="big" id="mcalc">–</div></div></div>' +
     '<h2>Pièces jointes</h2><div id="attBox"></div>' +
+    '<div id="aiBox"></div>' +
     '<label for="f_notes">Remarques</label><textarea id="f_notes" name="notes">' + esc(m ? m.notes || '' : '') + '</textarea>' +
     (m ? '<div class="actions"><button type="button" class="danger" data-act="delMaint" data-id="' + esc(m.id) + '">Supprimer cet entretien</button></div>' : '') +
     '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
-  openSheet(h); maintCalc(); attInit('maint', m ? m.id : '');
+  openSheet(h); maintCalc(); attInit('maint', m ? m.id : ''); invInit();
 }
 function readMaintForm(form) {
   var fd = new FormData(form), g = function (k) { return (fd.get(k) || '').toString().trim(); };
