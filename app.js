@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.4.0';
+var APP_VERSION = '0.5.0';
 var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -41,11 +41,11 @@ function toast(msg) {
 
 /* ---------- Base locale ---------- */
 var db = null;
-var data = { vehicles: [], readings: [], fills: [], prices: [], maints: [], expenses: [], deleted: [], lastExport: null };
+var data = { vehicles: [], readings: [], fills: [], prices: [], maints: [], expenses: [], tariffs: [], charges: [], deleted: [], lastExport: null };
 
 function openDB() {
   return new Promise(function (res, rej) {
-    var r = indexedDB.open(DB_NAME, 3);
+    var r = indexedDB.open(DB_NAME, 4);
     r.onupgradeneeded = function () {
       var d = r.result, has = function (n) { return d.objectStoreNames.contains(n); };
       if (!has('vehicles')) d.createObjectStore('vehicles', { keyPath: 'id' });
@@ -55,6 +55,8 @@ function openDB() {
       if (!has('fills')) d.createObjectStore('fills', { keyPath: 'id' });   // pleins (0.3)
       if (!has('maints')) d.createObjectStore('maints', { keyPath: 'id' });     // entretiens (0.4)
       if (!has('expenses')) d.createObjectStore('expenses', { keyPath: 'id' }); // achats annexes et autres dépenses (0.4)
+      if (!has('tariffs')) d.createObjectStore('tariffs', { keyPath: 'id' });   // tarifs électricité maison par période (0.7)
+      if (!has('charges')) d.createObjectStore('charges', { keyPath: 'id' });   // recharges électriques (0.7)
       if (!has('prices')) d.createObjectStore('prices', { keyPath: 'id' }); // prix moyens mensuels (0.3)
     };
     r.onsuccess = function () { res(r.result); };
@@ -77,6 +79,8 @@ async function reload() {
   data.prices = await rq(st('prices').getAll());
   data.maints = await rq(st('maints').getAll());
   data.expenses = await rq(st('expenses').getAll());
+  data.tariffs = await rq(st('tariffs').getAll());
+  data.charges = await rq(st('charges').getAll());
   var m = await rq(st('meta').get('lastExport'));
   data.lastExport = m ? m.value : null;
 }
@@ -381,7 +385,10 @@ async function deleteVehicle(id) {
   if (!confirm('Supprimer « ' + v.name + ' », ses ' + rs.length + ' relevé(s) et ses ' + fs.length + ' plein(s) ? Cette action est définitive.')) return;
   var ms = data.maints.filter(function (r) { return r.vehicleId === id; }), es = data.expenses.filter(function (r) { return r.vehicleId === id; });
   if ((ms.length || es.length) && !confirm('Cela supprime aussi ' + ms.length + ' entretien(s) et ' + es.length + ' dépense(s) / achat(s) annexe(s). Continuer ?')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'maints', 'expenses', 'deleted'], 'readwrite'), now = Date.now();
+  var cs = data.charges.filter(function (r) { return r.vehicleId === id; });
+  if (cs.length && !confirm('Cela supprime aussi ' + cs.length + ' recharge(s). Continuer ?')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'maints', 'expenses', 'charges', 'deleted'], 'readwrite'), now = Date.now();
+  cs.forEach(function (r) { t.objectStore('charges').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'charge', deletedAt: now }); });
   ms.forEach(function (r) { t.objectStore('maints').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'maint', deletedAt: now }); });
   es.forEach(function (r) { t.objectStore('expenses').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'expense', deletedAt: now }); });
   fs.forEach(function (r) { t.objectStore('fills').delete(r.id); t.objectStore('deleted').put({ id: r.id, kind: 'fill', deletedAt: now }); });
@@ -395,7 +402,7 @@ async function deleteVehicle(id) {
 function buildExport() {
   return JSON.stringify({
     format: FORMAT, formatVersion: 1, appVersion: APP_VERSION, exportedAt: new Date().toISOString(),
-    vehicles: data.vehicles, readings: data.readings, fills: data.fills, prices: data.prices, maints: data.maints, expenses: data.expenses
+    vehicles: data.vehicles, readings: data.readings, fills: data.fills, prices: data.prices, maints: data.maints, expenses: data.expenses, tariffs: data.tariffs, charges: data.charges
   }, null, 1);
 }
 async function markExported() { await dbPut('meta', { key: 'lastExport', value: Date.now() }); await reload(); }
@@ -419,6 +426,8 @@ async function importText(text) {
   var fl = Array.isArray(j.fills) ? j.fills : [], pr = Array.isArray(j.prices) ? j.prices : [];
   var ml = Array.isArray(j.maints) ? j.maints : [], el = Array.isArray(j.expenses) ? j.expenses : [], byM = {}, byE = {};
   data.maints.forEach(function (x) { byM[x.id] = x; }); data.expenses.forEach(function (x) { byE[x.id] = x; });
+  var tl = Array.isArray(j.tariffs) ? j.tariffs : [], cl = Array.isArray(j.charges) ? j.charges : [], byT = {}, byC = {};
+  data.tariffs.forEach(function (x) { byT[x.id] = x; }); data.charges.forEach(function (x) { byC[x.id] = x; });
   var byV = {}, byR = {}, byF = {}, byP = {};
   data.vehicles.forEach(function (x) { byV[x.id] = x; });
   data.readings.forEach(function (x) { byR[x.id] = x; });
@@ -431,9 +440,13 @@ async function importText(text) {
   var addP = pr.filter(function (x) { return x && x.id && x.fuel && x.month && newer(x, byP[x.id]); });
   var addM = ml.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byM[x.id]); });
   var addE = el.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byE[x.id]); });
-  if (!addV.length && !addR.length && !addF.length && !addP.length && !addM.length && !addE.length) { toast('Rien de nouveau à importer'); return; }
-  if (!confirm('Importer ' + addV.length + ' véhicule(s), ' + addR.length + ' relevé(s), ' + addF.length + ' plein(s) et ' + addP.length + ' prix, ' + addM.length + ' entretien(s) et ' + addE.length + ' dépense(s) (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted'], 'readwrite');
+  var addT = tl.filter(function (x) { return x && x.id && newer(x, byT[x.id]); });
+  var addC = cl.filter(function (x) { return x && x.id && x.vehicleId && newer(x, byC[x.id]); });
+  if (!addV.length && !addR.length && !addF.length && !addP.length && !addM.length && !addE.length && !addT.length && !addC.length) { toast('Rien de nouveau à importer'); return; }
+  if (!confirm('Importer ' + addV.length + ' véhicule(s), ' + addR.length + ' relevé(s), ' + addF.length + ' plein(s) et ' + addP.length + ' prix, ' + addM.length + ' entretien(s) et ' + addE.length + ' dépense(s), ' + addT.length + ' tarif(s) et ' + addC.length + ' recharge(s) (nouveaux ou plus récents que ceux de cet appareil) ?')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'deleted'], 'readwrite');
+  addT.forEach(function (x) { t.objectStore('tariffs').put(x); t.objectStore('deleted').delete(x.id); });
+  addC.forEach(function (x) { t.objectStore('charges').put(x); t.objectStore('deleted').delete(x.id); });
   addM.forEach(function (x) { t.objectStore('maints').put(x); t.objectStore('deleted').delete(x.id); });
   addE.forEach(function (x) { t.objectStore('expenses').put(x); t.objectStore('deleted').delete(x.id); });
   addF.forEach(function (x) { t.objectStore('fills').put(x); t.objectStore('deleted').delete(x.id); });
@@ -444,9 +457,9 @@ async function importText(text) {
 }
 async function wipe() {
   if (!confirm('Effacer TOUTES les données de cet appareil ?')) return;
-  if (!confirm('Dernière confirmation : véhicules, relevés, pleins, prix, entretiens et dépenses seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
-  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted', 'meta'], 'readwrite');
-  ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
+  if (!confirm('Dernière confirmation : véhicules, relevés, pleins, prix, entretiens, dépenses, tarifs et recharges seront perdus (sauf si vous les avez exportés ou synchronisés ; une synchronisation les rapportera depuis le Drive).')) return;
+  var t = db.transaction(['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'deleted', 'meta'], 'readwrite');
+  ['vehicles', 'readings', 'fills', 'prices', 'maints', 'expenses', 'tariffs', 'charges', 'deleted', 'meta'].forEach(function (n) { t.objectStore(n).clear(); });
   await done(t); await reload(); go('home'); toast('Données effacées');
 }
 

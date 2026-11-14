@@ -100,20 +100,22 @@ function fillItem(f) {
     '<div><button class="link" data-act="editFill" data-id="' + esc(f.id) + '">Modifier</button></div></div>';
 }
 function energyVehicleSection(v) {
-  if (isElec(v)) return '<h2>Énergie</h2><div class="card muted">Les recharges électriques arrivent à l\'étape 0.7.</div>';
+  if (isElec(v)) return chargeVehicleSection(v);
   var fs = vehFills(v.id).slice().reverse();
   var h = '<h2>Énergie</h2><div class="card">' + statRows(v) + '</div>';
   h += '<div class="actions"><button data-act="addFill" data-id="' + esc(v.id) + '">＋ Plein</button></div>';
   if (fs.length) h += '<h3>Pleins (' + fs.length + ')</h3><div class="card list">' + fs.map(fillItem).join('') + '</div>';
+  if (chargeable(v)) h += chargeVehicleSection(v);
   return h;
 }
 function viewEnergy() {
-  var h = '<h1>Énergie</h1><div class="actions"><button class="primary" data-act="addFill">＋ Plein</button></div>';
+  var h = '<h1>Énergie</h1><div class="actions"><button class="primary" data-act="addFill">＋ Plein</button><button class="primary" data-act="addCharge">＋ Recharge</button></div>';
   var vs = sortedVehicles('actuel').concat(sortedVehicles('ancien'));
   if (!vs.length) h += '<div class="card empty">Ajoutez d\'abord un véhicule.</div>';
   vs.forEach(function (v) {
-    h += '<h2>' + esc(v.name) + '</h2><div class="card">' + (isElec(v) ? '<div class="muted">Recharges : étape 0.7.</div>' : statRows(v)) + '</div>';
+    h += '<h2>' + esc(v.name) + '</h2><div class="card">' + (isElec(v) ? chargeStats(v) : statRows(v) + (chargeable(v) ? '<h3>Recharges</h3>' + chargeStats(v) : '')) + '</div>';
   });
+  h += tariffsSection();
   h += '<h2>Prix moyens du carburant (par mois)</h2><div class="card"><div class="muted">Sert à estimer les périodes sans tickets (mode « Conso moyenne ») et à proposer le prix au litre. Table à remplir à la main pour l\'instant : aucune source gratuite et complète n\'a pu être récupérée automatiquement.</div>' +
     '<div class="actions"><button data-act="addPrice">＋ Un prix</button><button data-act="bulkPrice">Coller une liste</button></div></div>';
   FUELS.forEach(function (fu) {
@@ -128,7 +130,7 @@ function viewEnergy() {
 function fillForm(vehicleId, fillId) {
   var f = fillId ? data.fills.filter(function (x) { return x.id === fillId; })[0] : null;
   var list = data.vehicles.filter(function (v) { return !isElec(v); });
-  if (!list.length) { toast(data.vehicles.length ? 'Les recharges électriques arrivent à l\'étape 0.7' : 'Ajoutez d\'abord un véhicule'); return; }
+  if (!list.length) { toast(data.vehicles.length ? 'Ce véhicule est électrique : utilisez « ＋ Recharge »' : 'Ajoutez d\'abord un véhicule'); return; }
   var vid = f ? f.vehicleId : (vehicleId && list.some(function (v) { return v.id === vehicleId; }) ? vehicleId : (list.filter(function (v) { return (v.status || 'actuel') === 'actuel'; })[0] || list[0]).id);
   var h = '<h1>' + (f ? 'Modifier le plein' : 'Nouveau plein') + '</h1><form id="fform" data-id="' + esc(f ? f.id : '') + '">' +
     '<label for="f_vid">Véhicule</label><select id="f_vid" name="vehicleId">' +

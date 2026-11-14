@@ -74,3 +74,5 @@ nav#nav button.dirty span::after{content:'';display:inline-block;width:8px;heigh
 .lrow select,.lrow input{min-width:0;padding:8px}
 [hidden]{display:none!important}
 details.card summary{cursor:pointer}
+.srow{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-top:6px}
+.srow input{min-width:0;padding:8px}
