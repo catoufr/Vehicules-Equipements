@@ -1,11 +1,12 @@
 'use strict';
 /* Étape 0.4 — Carnet d'entretien, autres dépenses, achats annexes (sans pièces jointes pour l'instant). */
 
+var OTHER = '__other';
 var LINE_KINDS = ['Main d\'oeuvre', 'Pièces', 'Équipements', 'Autre'];
 var EXP_CATS = ['Assurance', 'Carte grise', 'Contrôle technique', 'Vignette', 'Parking', 'Péage', 'Lavage', 'Amende', 'Autre'];
 
 function eur2(n) { return Math.round(n * 100) / 100; }
-function vehName(id) { var v = data.vehicles.filter(function (x) { return x.id === id; })[0]; return v ? v.name : '(véhicule supprimé)'; }
+function vehName(id) { if (id === OTHER) return 'Autre personne'; var v = data.vehicles.filter(function (x) { return x.id === id; })[0]; return v ? v.name : '(véhicule supprimé)'; }
 // Total TTC d'un entretien
 function maintTotal(m) {
   if (m.mode !== 'detail') return m.total != null ? m.total : null;

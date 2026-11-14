@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.5.0';
+var APP_VERSION = '0.5.1';
 var APP_DATE = '13 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -303,9 +303,9 @@ function vehicleForm(id) {
     [''].concat(FUELS).map(function (o) { return '<option value="' + o + '"' + ((v.fuel || '') === o ? ' selected' : '') + '>' + (o || '— (selon l\'énergie)') + '</option>'; }).join('') + '</select>' +
     '<label>Mode de suivi</label><div class="seg"><label><input type="radio" name="mode" value="fills"' + (v.mode !== 'manual' ? ' checked' : '') + '><span>Plein à plein</span></label>' +
     '<label><input type="radio" name="mode" value="manual"' + (v.mode === 'manual' ? ' checked' : '') + '><span>Conso moyenne</span></label></div>' +
-    fld('Conso moyenne connue (L/100 km)', 'manualConso', v.manualConso, { inputmode: 'decimal', ph: 'ex. 6,5' }) +
-    fld('Prix moyen du litre si pas dans la table (€)', 'manualPrice', v.manualPrice, { inputmode: 'decimal', ph: 'ex. 1,75' }) +
-    '<div class="muted">Le mode « Conso moyenne » sert aux véhicules sans tickets : le coût est estimé à partir des kilomètres entre deux relevés.</div></fieldset>' +
+    fld('Conso moyenne connue (L/100 km, ou kWh/100 km en électrique)', 'manualConso', v.manualConso, { inputmode: 'decimal', ph: 'ex. 6,5' }) +
+    fld('Prix moyen du litre ou du kWh si pas dans la table (€)', 'manualPrice', v.manualPrice, { inputmode: 'decimal', ph: 'ex. 1,75' }) +
+    '<div class="muted">Le mode « Conso moyenne » sert aux véhicules sans tickets : le coût est estimé à partir des kilomètres entre deux relevés. En électrique, la conso moyenne sert au coût d\'utilisation ; le coût réel vient toujours des recharges.</div></fieldset>' +
     '<fieldset><legend>Achat</legend><label for="f_condition">Neuf ou occasion</label><select id="f_condition" name="condition">' +
     ['', 'Neuf', 'Occasion'].map(function (o) { return '<option value="' + o + '"' + (p.condition === o ? ' selected' : '') + '>' + (o || '—') + '</option>'; }).join('') + '</select>' +
     fld('Kilométrage à l\'achat (0 pour un neuf)', 'pkm', p.km, { inputmode: 'numeric' }) +

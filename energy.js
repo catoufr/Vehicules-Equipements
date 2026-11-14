@@ -115,6 +115,8 @@ function viewEnergy() {
   vs.forEach(function (v) {
     h += '<h2>' + esc(v.name) + '</h2><div class="card">' + (isElec(v) ? chargeStats(v) : statRows(v) + (chargeable(v) ? '<h3>Recharges</h3>' + chargeStats(v) : '')) + '</div>';
   });
+  h += othersSection();
+  h += '<div class="actions"><button data-act="importCharges">Importer le CSV du chargeur</button></div>';
   h += tariffsSection();
   h += '<h2>Prix moyens du carburant (par mois)</h2><div class="card"><div class="muted">Sert à estimer les périodes sans tickets (mode « Conso moyenne ») et à proposer le prix au litre. Table à remplir à la main pour l\'instant : aucune source gratuite et complète n\'a pu être récupérée automatiquement.</div>' +
     '<div class="actions"><button data-act="addPrice">＋ Un prix</button><button data-act="bulkPrice">Coller une liste</button></div></div>';
