@@ -8,9 +8,13 @@ function fmtPk(n) { return n == null || !isFinite(n) ? '–' : new Intl.NumberFo
 function p2(n) { return String(n).padStart(2, '0'); }
 
 /* ---------- Heures et tarifs ---------- */
-function parseHM(s) {
-  var m = /^\s*(\d{1,2})[:h](\d{2})\s*$/.exec(String(s || '')); if (!m) return null;
-  var h = +m[1], mi = +m[2]; if (mi > 59 || h > 24 || (h === 24 && mi > 0)) return null;
+function parseHM(s) { // accepte 22:00, 2200, 22, 22h, 22h30, 22.00, 6:30, 0630
+  var t = String(s || '').trim().toLowerCase().replace(/\s/g, ''), h, mi, m;
+  if ((m = /^(\d{1,2})(?:[:h.](\d{2})?)?$/.exec(t))) { h = +m[1]; mi = m[2] ? +m[2] : 0; }
+  else if ((m = /^(\d{2})(\d{2})$/.exec(t))) { h = +m[1]; mi = +m[2]; }
+  else if ((m = /^(\d)(\d{2})$/.exec(t))) { h = +m[1]; mi = +m[2]; }
+  else return null;
+  if (mi > 59 || h > 24 || (h === 24 && mi > 0)) return null;
   return h * 60 + mi;
 }
 function fmtHM(min) { return p2(Math.floor(min / 60)) + ':' + p2(min % 60); }
@@ -318,6 +322,9 @@ document.addEventListener('click', function (ev) {
   else if (act === 'rmSlot') el.closest('.srow').remove();
 });
 document.addEventListener('input', function (ev) { if (ev.target.closest && ev.target.closest('#cform')) chargeCalc(); });
+document.addEventListener('change', function (ev) { // met en forme les heures des plages : 2200 → 22:00
+  var t = ev.target; if (t && (t.name === 'sf' || t.name === 'st') && t.closest('#tform')) { var v = parseHM(t.value); if (v != null) t.value = (v === 1440 ? '24:00' : fmtHM(v)); }
+});
 document.addEventListener('change', function (ev) {
   var t = ev.target; if (!t || !t.closest) return;
   if (t.closest('#cform')) { if (t.name === 'sd' && $('#f_ed') && !$('#f_ed').dataset.t) $('#f_ed').value = t.value; chargeCalc(); }
