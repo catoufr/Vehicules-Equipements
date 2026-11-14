@@ -23,8 +23,17 @@ function tariffFor(date) { // période valable à cette date ; la plus récemmen
   c.sort(function (a, b) { return b.from.localeCompare(a.from); });
   return c[0] || null;
 }
-function slotAt(t, m) { // plage HC contenant la minute m (0..1439), sinon null
-  var sl = t.slots || [];
+function seasonsOf(t) { // anciens tarifs (plages sans saison) = une période valable toute l'année
+  return t.seasons && t.seasons.length ? t.seasons : [{ from: '', to: '', slots: t.slots || [] }];
+}
+function seasonHas(se, ds) { // ds = 'AAAA-MM-JJ' ; dates de saison 'MM-JJ' (vide = toute l'année)
+  if (!se.from && !se.to) return true;
+  var md = ds.slice(5);
+  return se.from <= se.to ? (md >= se.from && md <= se.to) : (md >= se.from || md <= se.to);
+}
+function seasonFor(t, ds) { var ss = seasonsOf(t); for (var i = 0; i < ss.length; i++) if (seasonHas(ss[i], ds)) return ss[i]; return null; }
+function slotAt(t, m, ds) { // plage HC contenant la minute m (0..1439) à la date ds, sinon null
+  var se = seasonFor(t, ds), sl = se ? se.slots || [] : [];
   for (var i = 0; i < sl.length; i++) {
     var f = sl[i].f, e = sl[i].t;
     if (f < e ? (m >= f && m < e) : (m >= f || m < e)) return sl[i];
@@ -43,7 +52,7 @@ function chargeInfo(c) {
     var tf = tariffFor(c.start.slice(0, 10));
     if (!tf) out.missing = true;
     else {
-      var pr = (tf.slots || []).length ? Math.min.apply(null, tf.slots.map(function (x) { return x.price; })) : tf.hp;
+      var fs = (seasonFor(tf, c.start.slice(0, 10)) || {}).slots || [], pr = fs.length ? Math.min.apply(null, fs.map(function (x) { return x.price; })) : tf.hp;
       out.cost = c.kwh * pr; out.hc = c.kwh; out.hp = 0; out.auto = true;
     }
     if (c.override != null) { out.cost = c.override; out.auto = false; }
@@ -53,9 +62,9 @@ function chargeInfo(c) {
   if (a != null && b != null && c.kwh > 0) {
     var n = Math.max(1, b - a), per = c.kwh / n, cost = 0, hc = 0, hp = 0, miss = 0, cache = {};
     for (var i = 0; i < n; i++) {
-      var idx = a + i, day = Math.floor(idx / 1440), m = idx % 1440, d = cache[day] || (cache[day] = { t: tariffFor(dayStr(day)) });
+      var idx = a + i, day = Math.floor(idx / 1440), m = idx % 1440, d = cache[day] || (cache[day] = { ds: dayStr(day), t: tariffFor(dayStr(day)) });
       if (!d.t) { miss++; continue; }
-      var sl = slotAt(d.t, m);
+      var sl = slotAt(d.t, m, d.ds);
       if (sl) { hc += per; cost += per * sl.price; } else { hp += per; cost += per * d.t.hp; }
     }
     if (miss < n) { out.hc = hc; out.hp = hp; out.cost = cost; out.auto = true; out.missing = miss > 0; }
@@ -120,14 +129,25 @@ function chargeVehicleSection(v) {
   if (cs.length) h += '<h3>Recharges (' + cs.length + ')</h3><div class="card list">' + cs.map(function (c) { return chargeItem(c, false); }).join('') + '</div>';
   return h;
 }
+function fmtDM(md) { return md ? md.slice(3) + '/' + md.slice(0, 2) : ''; }
+function parseDM(x) { // 01/04, 1/4, 0104, 01.04 → '04-01'
+  var m = /^(\d{1,2})[\/.\-](\d{1,2})$/.exec(String(x || '').trim()) || /^(\d{2})(\d{2})$/.exec(String(x || '').trim());
+  if (!m) return null;
+  var d = +m[1], mo = +m[2]; if (mo < 1 || mo > 12 || d < 1 || d > new Date(Date.UTC(2024, mo, 0)).getUTCDate()) return null;
+  return p2(mo) + '-' + p2(d);
+}
 function slotsText(t) {
-  var s = (t.slots || []).slice().sort(function (a, b) { return a.f - b.f; }).map(function (x) { return 'HC ' + fmtHM(x.f) + '–' + fmtHM(x.t) + ' : ' + fmtPk(x.price); });
-  return ['HP : ' + fmtPk(t.hp)].concat(s).join(' · ');
+  var ss = seasonsOf(t), multi = ss.length > 1 || ss[0].from;
+  var parts = ss.map(function (se) {
+    var sl = (se.slots || []).slice().sort(function (a, b) { return a.f - b.f; }).map(function (x) { return fmtHM(x.f) + '–' + fmtHM(x.t) + ' ' + fmtPk(x.price); });
+    return (multi ? 'du ' + (se.from ? fmtDM(se.from) + ' au ' + fmtDM(se.to) : 'toute l\'année') + ' : ' : 'HC : ') + (sl.join(', ') || 'aucune plage HC');
+  });
+  return 'HP : ' + fmtPk(t.hp) + ' · ' + parts.join(' · ');
 }
 function tariffsSection() {
   var ts = data.tariffs.slice().sort(function (a, b) { return b.from.localeCompare(a.from); });
-  var h = '<h2>Tarifs électricité maison</h2><div class="card"><div class="muted">Prix du kWh seulement (pas d\'abonnement). Une période : date de début, date de fin facultative (vide = contrat en cours), prix HP, et une ou plusieurs plages d\'heures creuses avec leur prix, de 00:00 à 24:00.</div>' +
-    '<div class="actions"><button data-act="addTariff">＋ Période de tarif</button></div></div>';
+  var h = '<h2>Tarifs électricité maison</h2><div class="card"><div class="muted">Prix du kWh seulement (pas d\'abonnement). Un contrat : date de début, date de fin facultative (vide = contrat en cours), prix HP, puis une ou plusieurs périodes de l\'année (dates JJ/MM) avec leurs plages d\'heures creuses et leur prix, de 00:00 à 24:00.</div>' +
+    '<div class="actions"><button data-act="addTariff">＋ Contrat / tarif</button></div></div>';
   if (ts.length) h += '<div class="card list">' + ts.map(function (t) {
     return '<div class="item"><div><b>' + (t.name ? esc(t.name) + ' · ' : '') + 'depuis le ' + fmtDate(t.from) + (t.to ? ' jusqu\'au ' + fmtDate(t.to) : ' <span class="tag">en cours</span>') + '</div><div class="muted">' + esc(slotsText(t)) + '</div></div>' +
       '<div><button class="link" data-act="editTariff" data-id="' + esc(t.id) + '">Modifier</button></div></div>';
@@ -138,23 +158,33 @@ function tariffsSection() {
 /* ---------- Formulaire tarif ---------- */
 function slotRow(s) {
   s = s || {};
-  return '<div class="srow"><input name="sf" inputmode="numeric" placeholder="22:00" value="' + esc(s.f != null ? fmtHM(s.f) : '') + '"><input name="st" inputmode="numeric" placeholder="06:00" value="' + esc(s.t != null ? (s.t === 1440 ? '24:00' : fmtHM(s.t)) : '') + '">' +
-    '<input name="sp" inputmode="decimal" placeholder="€/kWh" value="' + esc(s.price == null ? '' : String(s.price).replace('.', ',')) + '"><button type="button" data-act="rmSlot" aria-label="Retirer">✕</button></div>';
+  return '<div class="srow"><input name="sf" inputmode="numeric" placeholder="22:00" aria-label="Début" value="' + esc(s.f != null ? fmtHM(s.f) : '') + '"><input name="st" inputmode="numeric" placeholder="06:00" aria-label="Fin" value="' + esc(s.t != null ? (s.t === 1440 ? '24:00' : fmtHM(s.t)) : '') + '">' +
+    '<input name="sp" inputmode="decimal" placeholder="€/kWh" aria-label="Prix du kWh" value="' + esc(s.price == null ? '' : String(s.price).replace('.', ',')) + '"><button type="button" data-act="rmSlot" aria-label="Retirer la plage">✕</button></div>';
+}
+function seasonBlock(se, n) {
+  se = se || { from: '', to: '', slots: [{}] };
+  return '<div class="season card"><div class="row" style="justify-content:flex-start;flex-wrap:wrap;gap:8px"><b>Période ' + n + '</b><span class="muted">du</span><input class="sdf" style="width:92px" inputmode="numeric" placeholder="01/04" value="' + esc(fmtDM(se.from)) + '">' +
+    '<span class="muted">au</span><input class="sdt" style="width:92px" inputmode="numeric" placeholder="31/10" value="' + esc(fmtDM(se.to)) + '"><button type="button" class="link" data-act="rmSeason">Retirer</button></div>' +
+    '<div class="slots">' + ((se.slots && se.slots.length ? se.slots : [{}]).map(slotRow).join('')) + '</div>' +
+    '<div class="actions"><button type="button" data-act="addSlot">＋ Ajouter une plage</button></div></div>';
 }
 function tariffForm(id) {
   var t = id ? data.tariffs.filter(function (x) { return x.id === id; })[0] : null;
-  var h = '<h1>' + (t ? 'Modifier la période' : 'Nouvelle période de tarif') + '</h1><form id="tform" data-id="' + esc(t ? t.id : '') + '">' +
+  var ss = t ? seasonsOf(t) : [null];
+  var h = '<h1>' + (t ? 'Modifier la période' : 'Nouveau contrat / tarif') + '</h1><form id="tform" data-id="' + esc(t ? t.id : '') + '">' +
     fld('Nom (facultatif)', 'name', t ? t.name : '', { ph: 'ex. Contrat 2026' }) +
-    fld('Date de début', 'from', t ? t.from : todayStr(), { type: 'date', req: true }) +
-    fld('Date de fin (vide = contrat en cours)', 'to', t ? t.to : '', { type: 'date' }) +
+    fld('Début du contrat', 'from', t ? t.from : todayStr(), { type: 'date', req: true }) +
+    fld('Fin du contrat (vide = contrat en cours)', 'to', t ? t.to : '', { type: 'date' }) +
     fld('Prix HP, hors plages creuses (€/kWh)', 'hp', t ? String(t.hp).replace('.', ',') : '', { inputmode: 'decimal', req: true, ph: 'ex. 0,2404' }) +
-    '<label>Plages d\'heures creuses (de 00:00 à 24:00)</label><div class="muted">Début, fin, prix du kWh. Une plage qui passe minuit (22:00 → 06:00) est acceptée.</div><div id="slots">' +
-    ((t && t.slots && t.slots.length ? t.slots : [{}]).map(slotRow).join('')) + '</div>' +
-    '<div class="actions"><button type="button" data-act="addSlot">＋ Ajouter une plage</button></div>' +
-    (t ? '<div class="actions"><button type="button" class="danger" data-act="delTariff" data-id="' + esc(t.id) + '">Supprimer cette période</button></div>' : '') +
+    '<h2>Heures creuses</h2><div class="muted">Une ou plusieurs périodes de l\'année (dates JJ/MM), chacune avec ses plages d\'heures creuses de 00:00 à 24:00 et leur prix. Dates vides = toute l\'année. Une plage qui passe minuit (22:00 → 06:00) est acceptée.</div>' +
+    '<div id="seasons">' + ss.map(function (se, i) { return seasonBlock(se, i + 1); }).join('') + '</div>' +
+    '<div class="actions"><button type="button" data-act="addSeason">＋ Ajouter une période de l\'année</button></div>' +
+    (t ? '<div class="actions"><button type="button" class="danger" data-act="delTariff" data-id="' + esc(t.id) + '">Supprimer ce contrat</button></div>' : '') +
     '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>';
-  openSheet(h);
+  openSheet(h); renumberSeasons();
 }
+function renumberSeasons() { document.querySelectorAll('#seasons .season > .row > b').forEach(function (b, i) { b.textContent = 'Période ' + (i + 1); }); }
+function dayset(se) { var set = new Array(366).fill(0); if (!se.from && !se.to) return set.fill(1); for (var d = 0; d < 366; d++) { var ds = new Date(Date.UTC(2024, 0, 1 + d)).toISOString().slice(0, 10); if (seasonHas(se, ds)) set[d] = 1; } return set; }
 function overlap(slots) { // les plages se chevauchent-elles ?
   var used = new Array(1440).fill(0), bad = false;
   slots.forEach(function (s) { for (var m = 0; m < 1440; m++) { var inn = s.f < s.t ? (m >= s.f && m < s.t) : (m >= s.f || m < s.t); if (inn) { if (used[m]) bad = true; used[m] = 1; } } });
@@ -165,20 +195,33 @@ async function saveTariff(form) {
   var from = g('from'), to = g('to'), hp = num(g('hp'));
   if (!from || !(hp >= 0) || g('hp') === '') { toast('Date de début et prix HP requis'); return; }
   if (to && to < from) { toast('La date de fin précède la date de début'); return; }
-  var sf = fd.getAll('sf'), st = fd.getAll('st'), sp = fd.getAll('sp'), slots = [];
-  for (var i = 0; i < sf.length; i++) {
-    if (!String(sf[i]).trim() && !String(st[i]).trim() && !String(sp[i]).trim()) continue;
-    var f = parseHM(sf[i]), e = parseHM(st[i]), p = num(sp[i]);
-    if (f == null || e == null || p == null || p < 0 || f === 1440) { toast('Plage ' + (i + 1) + ' : heures de 00:00 à 24:00 et prix requis'); return; }
-    if (f === e) { toast('Plage ' + (i + 1) + ' : début et fin identiques'); return; }
-    slots.push({ f: f, t: e, price: p });
+  var seasons = [], blocks = document.querySelectorAll('#seasons .season');
+  for (var b = 0; b < blocks.length; b++) {
+    var blk = blocks[b], n = b + 1, df = blk.querySelector('.sdf').value.trim(), dt = blk.querySelector('.sdt').value.trim(), sf = null, st = null;
+    if (df || dt) {
+      sf = parseDM(df); st = parseDM(dt);
+      if (!sf || !st) { toast('Période ' + n + ' : dates au format JJ/MM (ex. 01/04), les deux ou aucune'); return; }
+    }
+    var slots = [], rows = blk.querySelectorAll('.srow');
+    for (var i = 0; i < rows.length; i++) {
+      var iv = rows[i].querySelectorAll('input'), a0 = iv[0].value.trim(), a1 = iv[1].value.trim(), a2 = iv[2].value.trim();
+      if (!a0 && !a1 && !a2) continue;
+      var f = parseHM(a0), e = parseHM(a1), p = num(a2);
+      if (f == null || e == null || p == null || p < 0 || f === 1440) { toast('Période ' + n + ', plage ' + (i + 1) + ' : heures de 00:00 à 24:00 et prix requis'); return; }
+      if (f === e) { toast('Période ' + n + ', plage ' + (i + 1) + ' : début et fin identiques'); return; }
+      slots.push({ f: f, t: e, price: p });
+    }
+    if (overlap(slots)) { toast('Période ' + n + ' : des plages se chevauchent'); return; }
+    seasons.push({ from: sf || '', to: st || '', slots: slots });
   }
-  if (overlap(slots)) { toast('Des plages se chevauchent'); return; }
+  if (!seasons.length) seasons.push({ from: '', to: '', slots: [] });
+  var sets = seasons.map(dayset);
+  for (var x = 0; x < sets.length; x++) for (var y = x + 1; y < sets.length; y++) for (var d = 0; d < 366; d++) if (sets[x][d] && sets[y][d]) { toast('Les périodes ' + (x + 1) + ' et ' + (y + 1) + ' se chevauchent'); return; }
   var others = data.tariffs.filter(function (x) { return x.id !== id && x.from <= (to || '9999-12-31') && (!x.to || x.to >= from); });
-  if (others.length && !confirm('Cette période chevauche une autre période de tarif. La plus récente (date de début) sera utilisée pour les jours communs.\n\nEnregistrer quand même ?')) return;
+  if (others.length && !confirm('Ce contrat chevauche une autre période de tarif. La plus récente (date de début) sera utilisée pour les jours communs.\n\nEnregistrer quand même ?')) return;
   var old = id ? data.tariffs.filter(function (x) { return x.id === id; })[0] : null;
   var t = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now() };
-  Object.assign(t, { name: g('name'), from: from, to: to, hp: hp, slots: slots, updatedAt: Date.now() });
+  Object.assign(t, { name: g('name'), from: from, to: to, hp: hp, seasons: seasons, updatedAt: Date.now() }); delete t.slots;
   await dbPut('tariffs', t); await reload(); closeSheet(); render(); toast('Tarif enregistré');
 }
 
@@ -318,12 +361,15 @@ document.addEventListener('click', function (ev) {
   else if (act === 'addTariff') tariffForm(null);
   else if (act === 'editTariff') tariffForm(id);
   else if (act === 'delTariff') run(deleteRec('tariffs', 'tariff', id, 'cette période de tarif'));
-  else if (act === 'addSlot') $('#slots').insertAdjacentHTML('beforeend', slotRow());
+  else if (act === 'addSlot') el.closest('.season').querySelector('.slots').insertAdjacentHTML('beforeend', slotRow());
   else if (act === 'rmSlot') el.closest('.srow').remove();
+  else if (act === 'addSeason') { $('#seasons').insertAdjacentHTML('beforeend', seasonBlock({ from: '', to: '', slots: [{}] }, 0)); renumberSeasons(); }
+  else if (act === 'rmSeason') { el.closest('.season').remove(); renumberSeasons(); }
 });
 document.addEventListener('input', function (ev) { if (ev.target.closest && ev.target.closest('#cform')) chargeCalc(); });
 document.addEventListener('change', function (ev) { // met en forme les heures des plages : 2200 → 22:00
-  var t = ev.target; if (t && (t.name === 'sf' || t.name === 'st') && t.closest('#tform')) { var v = parseHM(t.value); if (v != null) t.value = (v === 1440 ? '24:00' : fmtHM(v)); }
+  var t = ev.target; if (t && t.classList && (t.classList.contains('sdf') || t.classList.contains('sdt')) && t.closest('#tform')) { var dm = parseDM(t.value); if (dm) t.value = fmtDM(dm); }
+  if (t && (t.name === 'sf' || t.name === 'st') && t.closest('#tform')) { var v = parseHM(t.value); if (v != null) t.value = (v === 1440 ? '24:00' : fmtHM(v)); }
 });
 document.addEventListener('change', function (ev) {
   var t = ev.target; if (!t || !t.closest) return;
