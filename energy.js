@@ -144,6 +144,10 @@ function viewEnergy() {
   vs.forEach(function (v) {
     h += '<h2>' + esc(v.name) + '</h2><div class="card">' + (isElec(v) ? chargeStats(v) : statRows(v) + (chargeable(v) ? '<h3>Recharges</h3>' + chargeStats(v) : '')) + '</div>';
   });
+  equipList('actuel').concat(equipList('ancien')).forEach(function (q) {
+    var s = cuveStats(q.id); if (!s.n) return;
+    h += '<h2>🔥 ' + esc(q.name) + '</h2><div class="card">' + kv([['Remplissages', String(s.n)], ['Litres achetés', fmtL(s.liters)], ['Dépense', fmtEur(s.eur)], ['Prix moyen payé', s.avgPrice != null ? fmtPpl(s.avgPrice) : ''], ['Consommation estimée par an', s.perYear != null ? fmtL(s.perYear) : '']]) + '</div>';
+  });
   h += othersSection();
   h += '<div class="actions"><button data-act="importCharges">Importer le CSV du chargeur</button></div>';
   h += tariffsSection();
@@ -160,7 +164,7 @@ function viewEnergy() {
 /* ---------- Formulaires ---------- */
 function fillForm(vehicleId, fillId) {
   var f = fillId ? data.fills.filter(function (x) { return x.id === fillId; })[0] : null;
-  var list = data.vehicles.filter(function (v) { return !isElec(v); });
+  var list = data.vehicles.filter(function (v) { return !isElec(v) && !v.equip; });
   if (!list.length) { toast(data.vehicles.length ? 'Ce véhicule est électrique : utilisez « ＋ Recharge »' : 'Ajoutez d\'abord un véhicule'); return; }
   var vid = f ? f.vehicleId : (vehicleId && list.some(function (v) { return v.id === vehicleId; }) ? vehicleId : (list.filter(function (v) { return (v.status || 'actuel') === 'actuel'; })[0] || list[0]).id);
   var h = '<h1>' + (f ? 'Modifier le plein' : 'Nouveau plein') + '</h1><form id="fform" data-id="' + esc(f ? f.id : '') + '">' +

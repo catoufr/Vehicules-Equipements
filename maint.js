@@ -56,8 +56,8 @@ function viewMaint() {
 }
 
 /* ---------- Formulaire entretien ---------- */
-function vehOptions(vid) {
-  return data.vehicles.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === vid ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('');
+function vehOptions(vid, noEquip) {
+  return data.vehicles.filter(function (v) { return !(noEquip && v.equip); }).map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === vid ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('');
 }
 function defaultVeh(vehicleId) { return vehicleId || (sortedVehicles('actuel')[0] || data.vehicles[0] || {}).id; }
 function lineRow(l) {
@@ -75,7 +75,7 @@ function maintForm(vehicleId, id) {
     fld('Type d\'entretien', 'type', m ? m.type : '', { list: 'dl_mtypes', req: true, ph: 'Vidange, pneus… (libre)' }) +
     '<datalist id="dl_mtypes">' + opts(maintTypes()) + '</datalist>' +
     fld('Date', 'date', m ? m.date : todayStr(), { type: 'date', req: true }) +
-    fld('Kilométrage (facultatif)', 'km', m ? m.km : '', { inputmode: 'numeric' }) +
+    '<div id="kmWrap"' + ((data.vehicles.filter(function (x) { return x.id === vid; })[0] || {}).equip ? ' hidden' : '') + '>' + fld('Kilométrage (facultatif)', 'km', m ? m.km : '', { inputmode: 'numeric' }) + '</div>' +
     fld('Garage ou lieu (facultatif)', 'place', m ? m.place : '') +
     '<label>Prix</label><div class="seg"><label><input type="radio" name="mode" value="total"' + (!detail ? ' checked' : '') + '><span>Total seul</span></label>' +
     '<label><input type="radio" name="mode" value="detail"' + (detail ? ' checked' : '') + '><span>Détaillé</span></label></div>' +
@@ -110,6 +110,7 @@ async function saveMaint(form) {
   var p = readMaintForm(form);
   if (p.mode === 'total') { p.lines = []; } else { p.total = null; }
   var v = data.vehicles.filter(function (x) { return x.id === vid; })[0];
+  if (v && v.equip) km = null;
   if (km != null) {
     km = Math.round(km);
     var w = kmWarnings(v, date, km, null);

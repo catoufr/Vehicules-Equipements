@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.9.3';
+var APP_VERSION = '0.10.0';
 var APP_DATE = '14 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -128,7 +128,7 @@ function kmWarnings(v, date, km, ignoreId) {
   return out;
 }
 function sortedVehicles(status) {
-  return data.vehicles.filter(function (v) { return (v.status || 'actuel') === status; })
+  return data.vehicles.filter(function (v) { return !v.equip && (v.status || 'actuel') === status; })
     .sort(function (a, b) { return (a.name || '').localeCompare(b.name || '', 'fr'); });
 }
 function exportReminder() {
@@ -184,6 +184,7 @@ function viewHome() {
   h += '<h2>Mes véhicules</h2>';
   if (!cur.length) h += '<div class="card empty">Aucun véhicule pour l\'instant.<div class="actions"><button class="primary" data-act="addVehicle">Ajouter mon premier véhicule</button></div></div>';
   else h += cur.map(vehCard).join('');
+  var eq = equipList('actuel'); if (eq.length) h += '<h2>Mes équipements</h2>' + eq.map(equipCard).join('');
   return h;
 }
 function viewVehicles() {
@@ -191,7 +192,7 @@ function viewVehicles() {
   var h = '<h1>Véhicules</h1><div class="actions"><button class="primary" data-act="addVehicle">＋ Ajouter un véhicule</button></div>';
   h += '<h2>Actuels</h2>' + (cur.length ? cur.map(vehCard).join('') : '<div class="card empty">Aucun véhicule actuel.</div>');
   h += '<h2>Anciens</h2>' + (old.length ? old.map(vehCard).join('') : '<div class="card empty">Aucun ancien véhicule. Les fiches des véhicules vendus restent ici pour la comparaison.</div>');
-  return h;
+  return h + equipsSection();
 }
 function kv(rows) {
   var r = rows.filter(function (x) { return x[1] != null && x[1] !== ''; });
@@ -207,6 +208,7 @@ function powerText(v) {
 }
 function viewVehicle(id) {
   var v = data.vehicles.filter(function (x) { return x.id === id; })[0];
+  if (v && v.equip) return viewEquip(v);
   if (!v) return '<div class="card empty">Véhicule introuvable.<div class="actions"><button data-act="tab" data-tab="vehicles">Retour</button></div></div>';
   var old = (v.status || 'actuel') === 'ancien', p = v.purchase || {}, x = v.exit || {};
   var rs = vehReadings(id).slice().reverse();
@@ -268,7 +270,7 @@ function openSheet(html) { var s = $('#sheet'); s.innerHTML = '<div class="inner
 function closeSheet() { var s = $('#sheet'); s.hidden = true; s.innerHTML = ''; }
 
 var TYPES = ['Voiture', 'Utilitaire', 'Moto', 'Scooter', 'Camping-car', 'Remorque'];
-var FUELS = ['Gazole', 'SP95', 'SP95-E10', 'SP98', 'E85', 'GPL'];
+var FUELS = ['Gazole', 'SP95', 'SP95-E10', 'SP98', 'E85', 'GPL', 'Fioul'];
 var ENERGIES = ['Essence', 'Diesel', 'Électrique', 'Hybride', 'Hybride rechargeable', 'GPL', 'E85 (superéthanol)'];
 function opts(list) { return list.map(function (o) { return '<option value="' + esc(o) + '">'; }).join(''); }
 function fld(label, name, val, o) {
@@ -350,11 +352,11 @@ async function saveVehicle(form) {
 
 function readingForm(vehicleId, readingId) {
   var r = readingId ? data.readings.filter(function (x) { return x.id === readingId; })[0] : null;
-  var vid = r ? r.vehicleId : (vehicleId || (sortedVehicles('actuel')[0] || data.vehicles[0] || {}).id);
+  var vid = r ? r.vehicleId : (vehicleId || (sortedVehicles('actuel')[0] || data.vehicles.filter(function (v) { return !v.equip; })[0] || {}).id);
   if (!data.vehicles.length) { toast('Ajoutez d\'abord un véhicule'); return; }
   var h = '<h1>' + (r ? 'Modifier le relevé' : 'Nouveau kilométrage') + '</h1><form id="rform" data-id="' + esc(r ? r.id : '') + '">' +
     '<label for="f_vid">Véhicule</label><select id="f_vid" name="vehicleId">' +
-    data.vehicles.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === vid ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('') + '</select>' +
+    data.vehicles.filter(function (v) { return !v.equip; }).map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === vid ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('') + '</select>' +
     fld('Date', 'date', r ? r.date : todayStr(), { type: 'date', req: true }) +
     fld('Kilométrage', 'km', r ? r.km : '', { inputmode: 'numeric', req: true }) +
     (r ? '<div class="actions"><button type="button" class="danger" data-act="delReading" data-id="' + esc(r.id) + '">Supprimer ce relevé</button></div>' : '') +
@@ -392,7 +394,7 @@ async function deleteVehicle(id) {
   if (!v) return;
   var rs = data.readings.filter(function (r) { return r.vehicleId === id; });
   var fs = data.fills.filter(function (r) { return r.vehicleId === id; });
-  if (!confirm('Supprimer « ' + v.name + ' », ses ' + rs.length + ' relevé(s) et ses ' + fs.length + ' plein(s) ? Cette action est définitive.')) return;
+  if (!confirm('Supprimer « ' + v.name + ' », ses ' + rs.length + ' relevé(s) et ses ' + fs.length + (v.equip ? ' remplissage(s) de cuve' : ' plein(s)') + ' ? Cette action est définitive.')) return;
   var ms = data.maints.filter(function (r) { return r.vehicleId === id; }), es = data.expenses.filter(function (r) { return r.vehicleId === id; });
   if ((ms.length || es.length) && !confirm('Cela supprime aussi ' + ms.length + ' entretien(s) et ' + es.length + ' dépense(s) / achat(s) annexe(s). Continuer ?')) return;
   var cs = data.charges.filter(function (r) { return r.vehicleId === id; });

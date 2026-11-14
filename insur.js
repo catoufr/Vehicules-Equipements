@@ -41,7 +41,7 @@ function insForm(vehicleId, id) {
   if (!data.vehicles.length) { toast('Ajoutez d\'abord un véhicule'); return; }
   var vid = c ? c.vehicleId : defaultVeh(vehicleId), prev = insList(vid)[0];
   var h = '<h1>' + (c ? 'Modifier le contrat' : 'Nouveau contrat / changement') + '</h1><form id="insform" data-id="' + esc(c ? c.id : '') + '">' +
-    '<label for="f_vid">Véhicule</label><select id="f_vid" name="vehicleId">' + vehOptions(vid) + '</select>' +
+    '<label for="f_vid">Véhicule</label><select id="f_vid" name="vehicleId">' + vehOptions(vid, true) + '</select>' +
     fld('Assureur', 'insurer', c ? c.insurer : '', { req: true, ph: 'ex. MAIF, Matmut, Direct Assurance…' }) +
     fld('Formule / type de contrat', 'formula', c ? c.formula : '', { ph: 'Tous risques, tiers, tiers + vol…' }) +
     fld('N° de contrat (facultatif)', 'contractNo', c ? c.contractNo : '') +
