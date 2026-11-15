@@ -85,6 +85,22 @@ function chargeItem(c, showVeh) {
     '<div class="muted">' + [pl, i.cost != null ? fmtEur(i.cost) + (i.auto ? '' : ' (saisi)') : (c.place === 'maison' ? 'tarif manquant' : ''), c.forceHC ? '100 % HC (forcé)' : (i.hc != null && i.cost != null ? 'HC ' + fmtKwh(i.hc) + ' · HP ' + fmtKwh(i.hp) : ''), c.note || ''].filter(Boolean).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editCharge" data-id="' + esc(c.id) + '">Modifier</button></div></div>';
 }
+// Recharges regroupées par mois : un résumé par mois (nombre, kWh, coût), détail repliable ; le dernier mois est ouvert
+var CHG_OPEN = {};
+function chargeGroups(cs, showVeh, scope) {
+  var g = {}, order = [];
+  cs.forEach(function (c) { var k = c.start.slice(0, 7); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(c); });
+  order.sort().reverse();
+  return order.map(function (k, idx) {
+    var items = g[k], kwh = 0, eur = 0;
+    items.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) eur += i.cost; });
+    var label = new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }), id = (scope || '') + k;
+    var open = id in CHG_OPEN ? CHG_OPEN[id] : idx === 0;
+    return '<details class="grp" data-grp="' + esc(id) + '"' + (open ? ' open' : '') + '><summary><span><b>' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + '</b> <span class="muted">· ' + items.length + ' recharge' + (items.length > 1 ? 's' : '') + '</span></span>' +
+      '<span class="muted">' + fmtKwh(kwh) + ' · ' + fmtEur(eur) + '</span></summary>' + items.map(function (c) { return chargeItem(c, showVeh); }).join('') + '</details>';
+  }).join('');
+}
+document.addEventListener('toggle', function (e) { var d = e.target; if (d && d.getAttribute && d.getAttribute('data-grp')) CHG_OPEN[d.getAttribute('data-grp')] = d.open; }, true);
 // Comparaison coût réel (recharges) / coût d'utilisation (conso moyenne × km), sur la période où les deux sont connus
 function evStats(v) {
   var cs = vehCharges(v.id).slice().sort(function (a, b) { return a.start.localeCompare(b.start); });
@@ -153,7 +169,7 @@ function chargeVehicleSection(v) {
   var cs = vehCharges(v.id);
   var h = '<h2>Recharges</h2><div class="card">' + chargeStats(v) + '</div>' +
     '<div class="actions"><button data-act="addCharge" data-id="' + esc(v.id) + '">＋ Recharge</button><button data-act="importCharges" data-id="' + esc(v.id) + '">Importer le CSV du chargeur</button></div>';
-  if (cs.length) h += '<h3>Recharges (' + cs.length + ')</h3><div class="card list">' + cs.map(function (c) { return chargeItem(c, false); }).join('') + '</div>';
+  if (cs.length) h += '<h3>Recharges (' + cs.length + ')</h3><div class="card list">' + chargeGroups(cs, false, v.id) + '</div>';
   return h;
 }
 function fmtDM(md) { return md ? md.slice(3) + '/' + md.slice(0, 2) : ''; }
@@ -371,7 +387,7 @@ async function saveImportPreview(form) {
 }
 function othersSection() {
   var cs = vehCharges(OTHER); if (!cs.length) return '';
-  return '<h2>Recharges pour d\'autres personnes (' + cs.length + ')</h2><div class="card">' + chargeStats({ id: OTHER }) + '</div><div class="card list">' + cs.map(function (c) { return chargeItem(c, false); }).join('') + '</div>';
+  return '<h2>Recharges pour d\'autres personnes (' + cs.length + ')</h2><div class="card">' + chargeStats({ id: OTHER }) + '</div><div class="card list">' + chargeGroups(cs, false, OTHER) + '</div>';
 }
 
 /* ---------- Événements ---------- */

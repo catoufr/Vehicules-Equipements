@@ -106,3 +106,13 @@ input.auto,select.auto,textarea.auto{outline:2px solid var(--accent);background:
 .tbl thead th:first-child { left: 0; z-index: 3; }
 .tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; z-index: 1; background: var(--card); white-space: normal; min-width: 112px; max-width: 130px; }
 .tbl tr.tot td, .tbl tr.tot th { font-weight: 700; color: var(--text); }
+
+/* Groupes repliables (recharges par mois) */
+details.grp { border-bottom: 1px solid var(--line); }
+details.grp:last-child { border-bottom: 0; }
+details.grp > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; cursor: pointer; list-style: none; }
+details.grp > summary::-webkit-details-marker { display: none; }
+details.grp > summary::before { content: '▸'; color: var(--muted); margin-right: 6px; }
+details.grp[open] > summary::before { content: '▾'; }
+details.grp > summary > span:first-child { flex: 1; }
+details.grp > .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0 8px 14px; border-top: 1px dashed var(--line); }
