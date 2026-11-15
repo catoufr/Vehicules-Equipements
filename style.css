@@ -122,3 +122,11 @@ details.grp > .item { display: flex; justify-content: space-between; align-items
 details.grp.year > summary { font-size: 1.02rem; }
 details.grp.year > details.grp { margin-left: 10px; }
 details.grp.month > summary { padding: 8px 0; }
+
+details.sect { padding: 0; }
+details.sect > summary { display: flex; align-items: center; gap: 8px; padding: 14px; cursor: pointer; list-style: none; }
+details.sect > summary::-webkit-details-marker { display: none; }
+details.sect > summary::before { content: '▸'; color: var(--muted); }
+details.sect[open] > summary::before { content: '▾'; }
+details.sect > :not(summary) { margin-left: 14px; margin-right: 14px; }
+details.sect > :last-child { margin-bottom: 14px; }

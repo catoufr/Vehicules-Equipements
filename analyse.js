@@ -2,7 +2,7 @@
 /* Analyse et comparatif des véhicules (0.11) : coût d'usage et coût total de possession (achat − revente + dépenses),
    par km, par mois et par an ; dépenses par année ; comparaison côte à côte. */
 
-var CMP = { sel: null, yearVeh: null, metric: 'total', ref: null, align: false };
+var CMP = { sel: null, yearVeh: null, metric: 'total', ref: null, align: false, tblOpen: false };
 var CATS = [['energy', 'Énergie / carburant', 'c1'], ['maint', 'Entretiens', 'c2'], ['insur', 'Assurance', 'c3'], ['other', 'Autres dépenses et achats annexes', 'c4']];
 
 function cmpVehicles() {
@@ -151,10 +151,6 @@ function viewCompare() {
     return '<div class="cmpbar"><div class="row"><b>' + esc(x.t.v.name) + '</b><span><b>' + cmpFmt(cmpUnit(a, a.usage)) + '</b></span></div>' + cmpBar(a, max) +
       '<div class="muted">' + info + (a.aligned ? ' (recalculé sur ' + esc(refT.v.name) + ')' : '') + (x.t.o.estimated ? ' · carburant estimé' : '') + '</div></div>';
   }).join('') + cmpLegend() + (aligned ? '<div class="muted">Alignement : chaque véhicule est recalculé avec les km et la durée de « ' + esc(refT.v.name) + ' ». L\'énergie et les entretiens sont proportionnels aux km ; l\'assurance et les autres dépenses à la durée.</div>' : '') + '</div>';
-  h += '<h2>Tableau comparatif</h2><div class="muted">Faites défiler le tableau vers la droite pour voir tous les véhicules.</div><div class="tbl"><table><thead><tr><th></th>' + T.map(function (t) { return '<th>' + esc(t.v.name) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-    rows.map(function (r) { return '<tr class="' + r[2] + '"><th>' + esc(r[0].trim()) + '</th>' + T.map(function (t) { return '<td>' + r[1](t.o) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
-  h += '<div class="muted">' + (anyEst ? '* Carburant <b>estimé</b> (conso moyenne × km × prix mensuels) pour les véhicules en mode « Conso moyenne ». ' : '') +
-    'Le coût d\'usage (énergie, entretiens, assurance, autres dépenses) se compare entre tous les véhicules. Le total (achat − revente) n\'est calculé que pour un véhicule <b>vendu</b> dont l\'achat et la revente sont renseignés ; sinon « – ». L\'assurance est au prorata des jours.</div>';
   // dépenses par année
   var yv = CMP.yearVeh && sel.some(function (x) { return x.id === CMP.yearVeh; }) ? CMP.yearVeh : sel[0].id;
   h += '<h2>Dépenses par année</h2><div class="card"><label for="cmpYear">Véhicule</label><select id="cmpYear">' + sel.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === yv ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></div>';
@@ -169,6 +165,11 @@ function viewCompare() {
         '<div class="muted">' + CATS.filter(function (c) { return o[c[0]] > 0; }).map(function (c) { return c[1].split(' ')[0] + ' ' + fmtEur(o[c[0]]); }).join(' · ') + '</div></div>';
     }).join('') + cmpLegend() + '</div>';
   }
+  var tb = '<div class="muted">Faites défiler le tableau vers la droite pour voir tous les véhicules.</div><div class="tbl"><table><thead><tr><th></th>' + T.map(function (t) { return '<th>' + esc(t.v.name) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+    rows.map(function (r) { return '<tr class="' + r[2] + '"><th>' + esc(r[0].trim()) + '</th>' + T.map(function (t) { return '<td>' + r[1](t.o) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+  tb += '<div class="muted">' + (anyEst ? '* Carburant <b>estimé</b> (conso moyenne × km × prix mensuels) pour les véhicules en mode « Conso moyenne ». ' : '') +
+    'Le coût d\'usage (énergie, entretiens, assurance, autres dépenses) se compare entre tous les véhicules. Le total (achat − revente) n\'est calculé que pour un véhicule <b>vendu</b> dont l\'achat et la revente sont renseignés ; sinon « – ». L\'assurance est au prorata des jours.</div>';
+  h += '<details class="card sect" id="cmpTbl"' + (CMP.tblOpen ? ' open' : '') + '><summary><b>Tableau comparatif détaillé</b> <span class="muted">· ' + rows.length + ' lignes, ' + T.length + ' véhicule' + (T.length > 1 ? 's' : '') + '</span></summary>' + tb + '</details>';
   return h;
 }
 
@@ -183,3 +184,4 @@ document.addEventListener('change', function (e) {
   else if (t.id === 'cmpRef') { CMP.ref = t.value; render(); }
   else if (t.id === 'cmpYear') { CMP.yearVeh = t.value; render(); }
 });
+document.addEventListener('toggle', function (e) { if (e.target && e.target.id === 'cmpTbl') CMP.tblOpen = e.target.open; }, true);

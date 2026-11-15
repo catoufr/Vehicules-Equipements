@@ -1,6 +1,6 @@
 'use strict';
 // Changer VERSION à chaque publication (avec APP_VERSION dans app.js).
-const VERSION = '0.12.0';
+const VERSION = '0.12.1';
 // Préfixe propre à cette appli : les trois applis partagent la même origine,
 // on ne touche jamais aux caches des autres.
 const PREFIX = 'veh-equip-';
