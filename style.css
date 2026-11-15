@@ -35,9 +35,9 @@ button:disabled { opacity: .5; cursor: default; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .actions > * { flex: 1 1 auto; }
-dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+dl.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin: 0; }
 dl.kv dt { color: var(--muted); }
-dl.kv dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+dl.kv dd { margin: 0; text-align: right; max-width: 17rem; overflow-wrap: break-word; }
 .list > .item { display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 10px 0; border-bottom: 1px solid var(--line); }
 .list > .item:last-child { border-bottom: 0; }
@@ -99,9 +99,10 @@ input.auto,select.auto,textarea.auto{outline:2px solid var(--accent);background:
 .chip { margin: 0; } .chip input { display: none; }
 .chip span { display: inline-block; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; }
 .chip input:checked + span { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.tbl { overflow-x: auto; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.tbl { overflow: auto; max-height: 68vh; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .tbl table { border-collapse: collapse; width: 100%; font-size: .92rem; }
 .tbl th, .tbl td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.tbl thead th { position: sticky; top: 0; background: var(--card); }
-.tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; background: var(--card); white-space: normal; min-width: 112px; max-width: 130px; }
+.tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 2px solid var(--line); }
+.tbl thead th:first-child { left: 0; z-index: 3; }
+.tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; z-index: 1; background: var(--card); white-space: normal; min-width: 112px; max-width: 130px; }
 .tbl tr.tot td, .tbl tr.tot th { font-weight: 700; color: var(--text); }
