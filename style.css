@@ -85,3 +85,23 @@ details.card summary{cursor:pointer}
 #lightbox img{max-width:100%;max-height:calc(100% - 64px);object-fit:contain}
 #lightbox .lbbar{display:flex;gap:12px;align-items:center;justify-content:space-between;width:100%;max-width:720px;margin-bottom:8px;color:#fff;font-size:.9rem}
 input.auto,select.auto,textarea.auto{outline:2px solid var(--accent);background:var(--ok-bg)}
+
+/* Analyse et comparatif */
+:root { --c1: #1f6f78; --c2: #c2571a; --c3: #6b5bd2; --c4: #8a8f94; }
+@media (prefers-color-scheme: dark) { :root { --c1: #4fb3bf; --c2: #f09a5b; --c3: #a79bf0; --c4: #a9b2b6; } }
+.seg-c1 { background: var(--c1); } .seg-c2 { background: var(--c2); } .seg-c3 { background: var(--c3); } .seg-c4 { background: var(--c4); }
+.stack { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--line); margin: 6px 0 4px; }
+.stack span { display: block; height: 100%; }
+.cmpbar { margin-bottom: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; color: var(--muted); margin-top: 4px; }
+.legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chip { margin: 0; } .chip input { display: none; }
+.chip span { display: inline-block; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; }
+.chip input:checked + span { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tbl { overflow-x: auto; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.tbl table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+.tbl th, .tbl td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl thead th { position: sticky; top: 0; background: var(--card); }
+.tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; background: var(--card); white-space: normal; min-width: 112px; max-width: 130px; }
+.tbl tr.tot td, .tbl tr.tot th { font-weight: 700; color: var(--text); }

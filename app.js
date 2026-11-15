@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.10.3';
+var APP_VERSION = '0.11.0';
 var APP_DATE = '14 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -144,13 +144,14 @@ var state = { tab: 'home', vehicleId: null };
 function render() {
   var main = $('#main'), html = '';
   var cv = state.tab === 'vehicle' ? data.vehicles.filter(function (x) { return x.id === state.vehicleId; })[0] : null;
-  var navTab = state.tab === 'vehicle' ? (cv && cv.equip ? 'equips' : 'vehicles') : state.tab;
+  var navTab = state.tab === 'compare' ? 'vehicles' : state.tab === 'vehicle' ? (cv && cv.equip ? 'equips' : 'vehicles') : state.tab;
   document.querySelectorAll('#nav button').forEach(function (b) {
     b.classList.toggle('on', b.getAttribute('data-tab') === navTab);
   });
   if (state.tab === 'home') html = viewHome();
   else if (state.tab === 'vehicles') html = viewVehicles();
   else if (state.tab === 'equips') html = viewEquips();
+  else if (state.tab === 'compare') html = viewCompare();
   else if (state.tab === 'vehicle') html = viewVehicle(state.vehicleId);
   else if (state.tab === 'energy') html = viewEnergy();
   else if (state.tab === 'maint') html = viewMaint();
@@ -191,7 +192,7 @@ function viewHome() {
 }
 function viewVehicles() {
   var cur = sortedVehicles('actuel'), old = sortedVehicles('ancien');
-  var h = '<h1>Véhicules</h1><div class="actions"><button class="primary" data-act="addVehicle">＋ Ajouter un véhicule</button></div>';
+  var h = '<h1>Véhicules</h1><div class="actions"><button class="primary" data-act="addVehicle">＋ Ajouter un véhicule</button><button data-act="tab" data-tab="compare">📊 Analyse et comparatif</button></div>';
   h += '<h2>Actuels</h2>' + (cur.length ? cur.map(vehCard).join('') : '<div class="card empty">Aucun véhicule actuel.</div>');
   h += '<h2>Anciens</h2>' + (old.length ? old.map(vehCard).join('') : '<div class="card empty">Aucun ancien véhicule. Les fiches des véhicules vendus restent ici pour la comparaison.</div>');
   return h;
