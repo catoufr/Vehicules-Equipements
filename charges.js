@@ -114,10 +114,12 @@ document.addEventListener('toggle', function (e) { var d = e.target; if (d && d.
 function evStats(v) {
   var cs = vehCharges(v.id).slice().sort(function (a, b) { return a.start.localeCompare(b.start); });
   if (!cs.length) return null;
-  var d0 = cs[0].date, pts = kmPoints(v).filter(function (p) { return p.date >= d0; }).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
-  if (pts.length < 2) return null;
-  var p0 = pts[0], p1 = pts[pts.length - 1], km = p1.km - p0.km; if (!(km > 0)) return null;
-  var per = cs.filter(function (c) { return c.date > p0.date && c.date <= p1.date; }), kwh = 0, eur = 0, eurKwh = 0;
+  var d0 = cs[0].date, all = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
+  if (all.length < 2) return null;
+  // départ = dernier relevé au plus tard le jour de la 1re recharge (sinon le 1er relevé) ; arrivée = dernier relevé
+  var p0 = all[0]; all.forEach(function (p) { if (p.date <= d0) p0 = p; });
+  var p1 = all[all.length - 1], km = p1.km - p0.km; if (!(km > 0)) return null;
+  var per = cs.filter(function (c) { return c.date >= p0.date && c.date <= p1.date; }), kwh = 0, eur = 0, eurKwh = 0;
   if (!per.length) return null;
   per.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; eurKwh += c.kwh; } });
   var o = { from: p0.date, to: p1.date, km: km, kwh: kwh, eur: eur, eurKwh: eurKwh, real100: kwh / km * 100 };
@@ -138,16 +140,9 @@ function evKm(v) {
   var eur = 0, ek = 0; cs.forEach(function (c) { var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; ek += c.kwh; } });
   var price = ek > 0 ? eur / ek : (v.manualPrice > 0 ? v.manualPrice : null);
   if (v.manualConso > 0 && price != null) o.use = v.manualConso / 100 * price;
-  var pts = kmPoints(v).sort(function (a, b) { return a.date.localeCompare(b.date) || a.km - b.km; });
-  if (pts.length >= 2) {
-    var first = cs.reduce(function (m, c) { return c.date < m ? c.date : m; }, cs[0].date), p0 = pts[0], p1 = pts[pts.length - 1];
-    pts.forEach(function (p) { if (p.date <= first) p0 = p; }); // dernier relevé avant (ou le jour de) la 1re recharge : on ne compte pas les km d'avant les recharges
-    var km = p1.km - p0.km;
-    if (km > 0) {
-      var e2 = 0; cs.forEach(function (c) { if (c.date >= p0.date && c.date <= p1.date) { var i = chargeInfo(c); if (i.cost != null) e2 += i.cost; } });
-      if (e2 > 0) { o.real = e2 / km; o.km = km; o.from = p0.date; o.to = p1.date; }
-    }
-  }
+  var e = evStats(v); // même période et même calcul que le bloc « Coût réel et coût d'utilisation »
+  if (e && e.realKm != null) { o.real = e.realKm; o.km = e.km; o.from = e.from; o.to = e.to; }
+  if (e && e.useKm != null) o.use = e.useKm;
   return o;
 }
 function chargeStats(v) {
