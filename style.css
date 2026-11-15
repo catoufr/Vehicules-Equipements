@@ -100,11 +100,13 @@ input.auto,select.auto,textarea.auto{outline:2px solid var(--accent);background:
 .chip span { display: inline-block; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; }
 .chip input:checked + span { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .tbl { overflow: auto; max-height: 68vh; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
-.tbl table { border-collapse: collapse; width: 100%; font-size: .92rem; }
-.tbl th, .tbl td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 2px solid var(--line); }
-.tbl thead th:first-child { left: 0; z-index: 3; }
-.tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; z-index: 1; background: var(--card); white-space: normal; min-width: 112px; max-width: 130px; }
+.tbl table { border-collapse: collapse; table-layout: fixed; font-size: .9rem; }
+.tbl th, .tbl td { padding: 8px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td, .tbl thead th:not(:first-child) { width: 118px; min-width: 118px; }
+.tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 2px solid var(--line); overflow: hidden; text-overflow: ellipsis; }
+.tbl thead th:first-child { left: 0; z-index: 3; width: 96px; min-width: 96px; }
+.tbl tbody th { text-align: left; font-weight: 500; color: var(--muted); position: sticky; left: 0; z-index: 1; background: var(--card); white-space: normal; width: 96px; min-width: 96px; max-width: 96px; font-size: .85rem; }
+.tbl .two { display: block; }
 .tbl tr.tot td, .tbl tr.tot th { font-weight: 700; color: var(--text); }
 
 /* Groupes repliables (recharges par mois) */

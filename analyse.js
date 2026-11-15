@@ -59,6 +59,8 @@ function vehTco(v) {
   o.total = o.usage + (o.buy || 0) - (o.resale || 0);
   return o;
 }
+// Le total (achat − revente) n'a de sens que pour un véhicule vendu, avec prix d'achat et de revente connus
+function totalOk(o) { return o.sold && o.buy != null && o.resale != null; }
 function perKm(n, o) { return o.km ? n / o.km : null; }
 function perMonth(n, o) { return o.days ? n / (o.days / 30.4375) : null; }
 function perYear(n, o) { return o.days ? n / (o.days / 365) : null; }
@@ -82,10 +84,10 @@ function viewCompare() {
   var sel = vs.filter(function (v) { return CMP.sel.indexOf(v.id) >= 0; });
   if (!sel.length) return h + '<div class="card empty">Cochez au moins un véhicule.</div>';
   var T = sel.map(function (v) { return { v: v, o: vehTco(v) }; });
-  var anyEst = T.some(function (t) { return t.o.estimated; }), noBuy = T.some(function (t) { return t.o.buy == null; });
+  var anyEst = T.some(function (t) { return t.o.estimated; });
   var rows = [], R = function (label, fn, cls) { rows.push([label, fn, cls || '']); };
   var s = function (f) { return function (o) { return f(o); }; };
-  R('Période', function (o) { return o.start ? fmtDate(o.start) + ' → ' + (o.sold ? fmtDate(o.end) : 'aujourd\'hui') : '–'; });
+  R('Période', function (o) { return o.start ? '<span class="two">' + fmtDate(o.start) + ' →</span><span class="two">' + (o.sold ? fmtDate(o.end) : 'aujourd\'hui') + '</span>' : '–'; });
   R('Durée', function (o) { return o.days ? (o.days >= 365 ? (o.days / 365).toFixed(1).replace('.', ',') + ' ans' : Math.round(o.days / 30.4375) + ' mois') : '–'; });
   R('Kilomètres parcourus', function (o) { return o.km != null ? fmtKm(o.km) : '–'; });
   R('Km par an', function (o) { return o.km && o.days ? fmtKm(Math.round(perYear(o.km, o))) : '–'; });
@@ -96,23 +98,22 @@ function viewCompare() {
   R('Coût d\'usage (hors achat)', function (o) { return fmtEur(o.usage); }, 'tot');
   R('Prix d\'achat', function (o) { return o.buy != null ? fmtEur(o.buy) : '–'; });
   R('Revente', function (o) { return o.resale != null ? fmtEur(o.resale) : '–'; });
-  R('Coût total de possession', function (o) { return fmtEur(o.total) + (o.buy == null ? ' †' : ''); }, 'tot');
+  R('Coût total de possession', function (o) { return totalOk(o) ? fmtEur(o.total) : '–'; }, 'tot');
   R('Usage par km', function (o) { return fmtPerKm(perKm(o.usage, o)); });
   R('  dont énergie', function (o) { return fmtPerKm(perKm(o.energy, o)); });
   R('  dont entretiens', function (o) { return fmtPerKm(perKm(o.maint, o)); });
   R('  dont assurance', function (o) { return fmtPerKm(perKm(o.insur, o)); });
-  R('Total (achat − revente) par km', function (o) { return fmtPerKm(perKm(o.total, o)); }, 'tot');
+  R('Total (achat − revente) par km', function (o) { return totalOk(o) ? fmtPerKm(perKm(o.total, o)) : '–'; }, 'tot');
   R('Usage par mois', function (o) { var n = perMonth(o.usage, o); return n == null ? '–' : fmtEur(n); });
   R('Usage par an', function (o) { var n = perYear(o.usage, o); return n == null ? '–' : fmtEur(n); });
-  R('Total par an', function (o) { var n = perYear(o.total, o); return n == null ? '–' : fmtEur(n); });
+  R('Total par an', function (o) { var n = totalOk(o) ? perYear(o.total, o) : null; return n == null ? '–' : fmtEur(n); });
   h += '<h2>Répartition du coût d\'usage</h2><div class="card">' + T.map(function (t) {
     return '<div class="cmpbar"><div class="row"><b>' + esc(t.v.name) + '</b><span class="muted">' + fmtEur(t.o.usage) + '</span></div>' + cmpBar(t.o) + '</div>';
   }).join('') + cmpLegend() + '</div>';
   h += '<h2>Tableau comparatif</h2><div class="muted">Faites défiler le tableau vers la droite pour voir tous les véhicules.</div><div class="tbl"><table><thead><tr><th></th>' + T.map(function (t) { return '<th>' + esc(t.v.name) + '</th>'; }).join('') + '</tr></thead><tbody>' +
     rows.map(function (r) { return '<tr class="' + r[2] + '"><th>' + esc(r[0].trim()) + '</th>' + T.map(function (t) { return '<td>' + r[1](t.o) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
   h += '<div class="muted">' + (anyEst ? '* Carburant <b>estimé</b> (conso moyenne × km × prix mensuels) pour les véhicules en mode « Conso moyenne ». ' : '') +
-    (noBuy ? '† Prix d\'achat non renseigné : le total ne le contient pas. ' : '') +
-    'Le coût total de possession = prix d\'achat − revente + coût d\'usage ; un véhicule encore possédé n\'a pas de revente, son total est donc maximal. L\'assurance est au prorata des jours.</div>';
+    'Le coût d\'usage (énergie, entretiens, assurance, autres dépenses) se compare entre tous les véhicules. Le total (achat − revente) n\'est calculé que pour un véhicule <b>vendu</b> dont l\'achat et la revente sont renseignés ; sinon « – ». L\'assurance est au prorata des jours.</div>';
   // dépenses par année
   var yv = CMP.yearVeh && sel.some(function (x) { return x.id === CMP.yearVeh; }) ? CMP.yearVeh : sel[0].id;
   h += '<h2>Dépenses par année</h2><div class="card"><label for="cmpYear">Véhicule</label><select id="cmpYear">' + sel.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === yv ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></div>';
