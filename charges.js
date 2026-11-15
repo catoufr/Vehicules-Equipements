@@ -88,16 +88,25 @@ function chargeItem(c, showVeh) {
 // Recharges regroupées par mois : un résumé par mois (nombre, kWh, coût), détail repliable ; le dernier mois est ouvert
 var CHG_OPEN = {};
 function chargeGroups(cs, showVeh, scope) {
-  var g = {}, order = [];
-  cs.forEach(function (c) { var k = c.start.slice(0, 7); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(c); });
-  order.sort().reverse();
-  return order.map(function (k, idx) {
-    var items = g[k], kwh = 0, eur = 0;
-    items.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) eur += i.cost; });
-    var label = new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }), id = (scope || '') + k;
-    var open = id in CHG_OPEN ? CHG_OPEN[id] : idx === 0;
-    return '<details class="grp" data-grp="' + esc(id) + '"' + (open ? ' open' : '') + '><summary><span><b>' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + '</b> <span class="muted">· ' + items.length + ' recharge' + (items.length > 1 ? 's' : '') + '</span></span>' +
-      '<span class="muted">' + fmtKwh(kwh) + ' · ' + fmtEur(eur) + '</span></summary>' + items.map(function (c) { return chargeItem(c, showVeh); }).join('') + '</details>';
+  var years = {}, yorder = [];
+  cs.forEach(function (c) { var y = c.start.slice(0, 4); if (!years[y]) { years[y] = []; yorder.push(y); } years[y].push(c); });
+  yorder.sort().reverse();
+  var sums = function (items) { var kwh = 0, eur = 0; items.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) eur += i.cost; }); return [kwh, eur]; };
+  var head = function (id, open, title, n, items, cls, body) {
+    var t = sums(items), o = id in CHG_OPEN ? CHG_OPEN[id] : open;
+    return '<details class="grp ' + cls + '" data-grp="' + esc(id) + '"' + (o ? ' open' : '') + '><summary><span><b>' + esc(title) + '</b> <span class="muted">· ' + n + ' recharge' + (n > 1 ? 's' : '') + '</span></span>' +
+      '<span class="muted">' + fmtKwh(t[0]) + ' · ' + fmtEur(t[1]) + '</span></summary>' + body + '</details>';
+  };
+  return yorder.map(function (y, yi) {
+    var g = {}, order = [];
+    years[y].forEach(function (c) { var k = c.start.slice(0, 7); if (!g[k]) { g[k] = []; order.push(k); } g[k].push(c); });
+    order.sort().reverse();
+    var body = order.map(function (k, mi) {
+      var label = new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
+      return head((scope || '') + k, yi === 0 && mi === 0, label.charAt(0).toUpperCase() + label.slice(1), g[k].length, g[k], 'month',
+        g[k].map(function (c) { return chargeItem(c, showVeh); }).join(''));
+    }).join('');
+    return head((scope || '') + y, yi === 0, y, years[y].length, years[y], 'year', body);
   }).join('');
 }
 document.addEventListener('toggle', function (e) { var d = e.target; if (d && d.getAttribute && d.getAttribute('data-grp')) CHG_OPEN[d.getAttribute('data-grp')] = d.open; }, true);

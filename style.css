@@ -116,3 +116,7 @@ details.grp > summary::before { content: '▸'; color: var(--muted); margin-righ
 details.grp[open] > summary::before { content: '▾'; }
 details.grp > summary > span:first-child { flex: 1; }
 details.grp > .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0 8px 14px; border-top: 1px dashed var(--line); }
+
+details.grp.year > summary { font-size: 1.02rem; }
+details.grp.year > details.grp { margin-left: 10px; }
+details.grp.month > summary { padding: 8px 0; }
