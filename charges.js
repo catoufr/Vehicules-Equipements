@@ -119,7 +119,7 @@ function evStats(v) {
   // départ = dernier relevé au plus tard le jour de la 1re recharge (sinon le 1er relevé) ; arrivée = dernier relevé
   var p0 = all[0]; all.forEach(function (p) { if (p.date <= d0) p0 = p; });
   var p1 = all[all.length - 1], km = p1.km - p0.km; if (!(km > 0)) return null;
-  var per = cs.filter(function (c) { return c.date >= p0.date && c.date <= p1.date; }), kwh = 0, eur = 0, eurKwh = 0;
+  var per = cs.filter(function (c) { return c.date > p0.date && c.date <= p1.date; }), kwh = 0, eur = 0, eurKwh = 0;
   if (!per.length) return null;
   per.forEach(function (c) { kwh += c.kwh; var i = chargeInfo(c); if (i.cost != null) { eur += i.cost; eurKwh += c.kwh; } });
   var o = { from: p0.date, to: p1.date, km: km, kwh: kwh, eur: eur, eurKwh: eurKwh, real100: kwh / km * 100 };
