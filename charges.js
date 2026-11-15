@@ -149,24 +149,20 @@ function chargeStats(v) {
   var cs = vehCharges(v.id); if (!cs.length) return '<div class="muted">Aucune recharge enregistrée.</div>';
   var kwh = 0, eur = 0, eurKwh = 0, home = 0, hc = 0, hcBase = 0;
   cs.forEach(function (c) { var i = chargeInfo(c); kwh += c.kwh; if (c.place === 'maison') home += c.kwh; if (i.cost != null) { eur += i.cost; eurKwh += c.kwh; } if (i.hc != null) { hc += i.hc; hcBase += c.kwh; } });
-  var h = kv([['Recharges', String(cs.length)], ['Énergie rechargée (réelle)', fmtKwh(kwh)], ['Coût réel (recharges)', fmtEur(eur)], ['Prix moyen', eurKwh ? fmtPk(eur / eurKwh) : ''],
-    ['Part à la maison', Math.round(home / kwh * 100) + ' %'], ['Part en heures creuses', hcBase ? Math.round(hc / hcBase * 100) + ' %' : '']]);
-  if (v.id === OTHER) return h;
-  var k = evKm(v);
-  if (k.real != null || k.use != null) h += kv([['Coût réel au km (recharges)', k.real != null ? fmtM(k.real) : ''], ['Coût d\'utilisation au km (conso moyenne)', k.use != null ? fmtM(k.use) : '']]) +
-    '<div class="muted">' + (k.real != null ? 'Réel : recharges du ' + fmtDate(k.from) + ' au ' + fmtDate(k.to) + ' ÷ ' + fmtKm(k.km) + '. ' : 'Le coût réel au km apparaît dès qu\'il y a deux relevés kilométriques. ') + 'Utilisation : conso moyenne × prix moyen payé.</div>';
-  var e = evStats(v);
-  if (e) {
-    h += '<h3>Coût réel et coût d\'utilisation (du ' + fmtDate(e.from) + ' au ' + fmtDate(e.to) + ', ' + fmtKm(e.km) + ')</h3>' + kv([
-      ['Conso réelle (recharges, pertes comprises)', fmtKwh(e.real100).replace(' kWh', ' kWh/100 km')],
+  var rows = [['Recharges', String(cs.length)], ['Énergie rechargée (réelle)', fmtKwh(kwh)], ['Coût réel (recharges)', fmtEur(eur)], ['Prix moyen', eurKwh ? fmtPk(eur / eurKwh) : ''],
+    ['Part à la maison', Math.round(home / kwh * 100) + ' %'], ['Part en heures creuses', hcBase ? Math.round(hc / hcBase * 100) + ' %' : '']];
+  if (v.id === OTHER) return kv(rows);
+  var e = evStats(v), k = evKm(v);
+  if (e) { // un seul bloc : les chiffres au km, la conso et les pertes sont calculés sur la même période
+    rows.push(['Conso réelle (pertes comprises)', fmtKwh(e.real100).replace(' kWh', ' kWh/100 km')],
       ['Conso moyenne indiquée', e.use100 ? fmtKwh(e.use100).replace(' kWh', ' kWh/100 km') : ''],
       ['Pertes estimées (chargeur + voiture)', e.loss != null ? (e.loss >= 0 ? '+' : '') + Math.round(e.loss * 1000) / 10 + ' %' : ''],
-      ['Coût réel (recharges)', e.realCost != null ? fmtEur(e.realCost) : fmtEur(e.eur)],
-      ['Prix réel au km (recharges)', e.realKm != null ? fmtM(e.realKm) : ''],
-      ['Coût d\'utilisation (conso moyenne)', e.useCost != null ? fmtEur(e.useCost) : ''],
-      ['Prix d\'utilisation au km', e.useKm != null ? fmtM(e.useKm) : '']]) +
-      '<div class="muted">Le coût réel vient des recharges ; il est le seul compté dans les dépenses cumulées. Le coût d\'utilisation (conso moyenne × km) est indicatif.</div>';
-  } else if (v.manualConso > 0) h += '<div class="muted">La comparaison coût réel / coût d\'utilisation demande au moins deux relevés kilométriques après la première recharge.</div>';
+      ['Coût réel au km (recharges)', e.realKm != null ? fmtM(e.realKm) : ''],
+      ['Coût d\'utilisation au km (conso moyenne)', e.useKm != null ? fmtM(e.useKm) : '']);
+  } else if (k.use != null) rows.push(['Coût d\'utilisation au km (conso moyenne)', fmtM(k.use)]);
+  var h = kv(rows);
+  if (e) h += '<div class="muted">Conso, pertes et coûts au km : du ' + fmtDate(e.from) + ' au ' + fmtDate(e.to) + ', ' + fmtKm(e.km) + ' (recharges faites après le relevé de départ). Le coût réel vient des recharges et est le seul compté dans les dépenses cumulées ; le coût d\'utilisation (conso moyenne × km) est indicatif.</div>';
+  else h += '<div class="muted">Le coût réel au km, la conso réelle et les pertes demandent au moins deux relevés kilométriques (le km d\'achat compte), le premier avant ou le jour de la première recharge.</div>';
   return h;
 }
 function chargeVehicleSection(v) {
