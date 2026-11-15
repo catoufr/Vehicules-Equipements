@@ -46,10 +46,15 @@ function maintVehicleSection(v) {
   h += es.length ? '<div class="card list">' + es.map(function (e) { return expItem(e, false); }).join('') + '</div>' : '<div class="card muted">' + (v.equip ? 'Aucune dépense (pièces, intervention…).' : 'Aucune dépense (assurance, péage, protège-écran…).') + '</div>';
   if (v.equip) {
     var pp = v.purchase && v.purchase.price != null ? v.purchase.price : 0;
-    h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Achat de l\'équipement', pp ? fmtEur(pp) : ''], ['Fioul (remplissages de cuve)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Total (achat compris)', fmtEur(pp + en + mt + ex + an)]]) + '</div>';
+  h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Achat de l\'équipement', pp ? fmtEur(pp) : ''], ['Fioul (remplissages de cuve)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Total (achat compris)', fmtEur(pp + en + mt + ex + an)]]) + '</div>';
     return h;
   }
-  h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([['Énergie (pleins et recharges)', fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Assurance (au prorata)', fmtEur(as)], ['Total (hors achat du véhicule)', fmtEur(en + mt + ex + an + as)]]) + '</div>';
+  var enLabel = 'Énergie (pleins et recharges)', estNote = '';
+  if (!isElec(v) && v.mode === 'manual') { // mode « conso moyenne » : le coût du carburant est estimé (conso moyenne × km × prix mensuels)
+    var mst = manualStats(v);
+    if (mst && mst.noPrice < mst.km) { en = mst.eur; enLabel = 'Carburant (estimé)'; estNote = '<div class="muted">Carburant <b>estimé</b> : conso moyenne × kilomètres entre relevés × prix moyens mensuels' + (mst.noPrice ? ' (prix manquant pour ' + fmtKm(mst.noPrice) + ')' : '') + '. ' + (fillStats(v.id).n ? 'Les pleins saisis ne sont pas ajoutés, pour éviter un double comptage.' : '') + '</div>'; }
+  }
+  h += '<h2>Dépenses cumulées</h2><div class="card">' + kv([[enLabel, fmtEur(en)], ['Entretiens', fmtEur(mt)], ['Autres dépenses', fmtEur(ex)], ['Achats annexes', fmtEur(an)], ['Assurance (au prorata)', fmtEur(as)], ['Total (hors achat du véhicule)', fmtEur(en + mt + ex + an + as)]]) + estNote + '</div>';
   return h;
 }
 function viewMaint() {
