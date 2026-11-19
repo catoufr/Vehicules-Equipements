@@ -14,6 +14,7 @@ function gaugeFrac(pct, v) {
   var th = 2 * Math.acos(1 - 2 * x); return (th - Math.sin(th)) / (2 * Math.PI);
 }
 function gaugeL(pct, v) { var c = capL(v); return (c != null && pct != null && isFinite(pct)) ? c * gaugeFrac(pct, v) : null; }
+function keptL(f) { return Math.max(0, (f.liters || 0) - (f.lost || 0)); } // litres réellement entrés dans la cuve (hors débordement)
 function cuveFills(id) { return vehFills(id).filter(function (f) { return !f.reading; }); }
 function equipList(status) {
   return data.vehicles.filter(function (v) { return v.equip && (v.status || 'actuel') === status; })
@@ -63,7 +64,7 @@ function cuveStats(id) {
 function cuveItem(f) {
   var c = fillCost(f);
   var g = (f.gb != null || f.ga != null) ? 'jauge ' + (f.gb != null ? f.gb + ' %' : '?') + ' → ' + (f.ga != null ? f.ga + ' %' : '?') : '';
-  return '<div class="item"><div><b>' + fmtDate(f.date) + '</b> · ' + fmtL(f.liters) +
+  return '<div class="item"><div><b>' + fmtDate(f.date) + '</b> · ' + fmtL(f.liters) + (f.lost ? ' <span class="muted">(dont ' + fmtL(f.lost) + ' perdus)</span>' : '') +
     '<div class="muted">' + [fmtPpl(f.ppl), c != null ? fmtEur(c) : '', g, f.station || ''].filter(function (x) { return x && x !== '–'; }).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editCuve" data-id="' + esc(f.id) + '">Modifier</button></div></div>';
 }
@@ -157,6 +158,8 @@ function cuveForm(equipId, fillId) {
     fld('Prix au litre (€)', 'ppl', f ? f.ppl : '', { inputmode: 'decimal', ph: last && last.ppl ? 'dernier : ' + String(last.ppl).replace('.', ',') : '' }) + '</div></div>' +
     fld('Montant total (€)', 'total', f ? f.total : '', { inputmode: 'decimal' }) +
     '<div class="muted">Deux des trois valeurs (litres, prix au litre, montant) suffisent : la troisième est calculée.</div>' +
+    fld('Dont litres perdus (débordement, facultatif)', 'lost', f && f.lost ? f.lost : '', { inputmode: 'decimal' }) +
+    '<div class="muted">À renseigner si du fioul a débordé : ces litres sont payés mais ne comptent pas dans la consommation.</div>' +
     '<h2>Jauge (facultatif)</h2><div class="pair"><div>' + fld('Avant le remplissage (%)', 'gb', f && f.gb != null ? f.gb : '', { inputmode: 'decimal' }) + '</div><div>' + fld('Après (%)', 'ga', f && f.ga != null ? f.ga : '', { inputmode: 'decimal' }) + '</div></div>' +
     '<div class="muted" id="gHint"></div>' +
     fld('Fournisseur (facultatif)', 'station', f ? f.station : '') +
@@ -166,7 +169,7 @@ function cuveForm(equipId, fillId) {
 }
 async function saveCuve(form) {
   var fd = new FormData(form), id = form.getAttribute('data-id'), vid = form.getAttribute('data-vid'), g = function (k) { return (fd.get(k) || '').toString().trim(); };
-  var date = g('date'), L = num(g('liters')), P = num(g('ppl')), T = num(g('total')), gb = num(g('gb')), ga = num(g('ga'));
+  var date = g('date'), L = num(g('liters')), P = num(g('ppl')), T = num(g('total')), gb = num(g('gb')), ga = num(g('ga')), lost = num(g('lost'));
   var ev = data.vehicles.filter(function (x) { return x.id === vid; })[0];
   if (!(L > 0) && gb != null && ga != null && ev && capL(ev)) L = Math.round(gaugeL(ga, ev) - gaugeL(gb, ev)); // litres déduits de la jauge
   if (!date || !(L > 0)) { toast('Date et litres requis (ou jauge avant et après avec la capacité de la cuve)'); return; }
@@ -175,7 +178,7 @@ async function saveCuve(form) {
   if (T == null && P != null) T = Math.round(L * P * 100) / 100;
   var old = id ? data.fills.filter(function (x) { return x.id === id; })[0] : null;
   var f = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now() };
-  Object.assign(f, { vehicleId: vid, date: date, km: null, liters: L, ppl: P, total: T, full: true, gb: gb, ga: ga, station: g('station'), updatedAt: Date.now() });
+  Object.assign(f, { vehicleId: vid, date: date, km: null, liters: L, ppl: P, total: T, full: true, gb: gb, ga: ga, lost: lost > 0 ? lost : null, station: g('station'), updatedAt: Date.now() });
   await dbPut('fills', f); await reload(); closeSheet(); go('vehicle', vid); toast('Remplissage enregistré');
 }
 
@@ -245,7 +248,7 @@ function gaugeHint() {
 // dont 1 % vaut plusieurs dizaines de litres). Consommation entre deux remplissages = niveau après − niveau avant le suivant.
 function gaugeEvents(v) { // [{date, b, a, add, reading}] : niveau (litres) avant et après chaque remplissage ou relevé
   return vehFills(v.id).map(function (f) {
-    var b = f.gb != null ? gaugeL(f.gb, v) : null, a = f.ga != null ? gaugeL(f.ga, v) : null, L = f.liters || 0;
+    var b = f.gb != null ? gaugeL(f.gb, v) : null, a = f.ga != null ? gaugeL(f.ga, v) : null, L = keptL(f);
     if (f.reading) b = a;
     else if (L > 0) { if (b != null) a = b + L; else if (a != null) b = a - L; }
     return { date: f.date, b: b, a: a, add: f.reading ? 0 : L, reading: !!f.reading };
@@ -278,7 +281,7 @@ function alloc(d0, d1, used, est, out) { // répartit une consommation entre deu
 function seasonModel(v) { // consommation par saison : jauge quand elle existe, sinon estimée avec les livraisons
   var seas = {}, segs = gaugeSegments(v), ok = segs.filter(function (x) { return !x.bad && x.used >= 0; }), nG = 0, nE = 0;
   ok.forEach(function (x) { alloc(dayNum(x.from), dayNum(x.to), x.used, false, seas); nG++; });
-  var m = {}; cuveFills(v.id).forEach(function (f) { var o = m[f.date] || (m[f.date] = { date: f.date, liters: 0 }); o.liters += f.liters || 0; });
+  var m = {}; cuveFills(v.id).forEach(function (f) { var o = m[f.date] || (m[f.date] = { date: f.date, liters: 0 }); o.liters += keptL(f); });
   var fs = Object.keys(m).sort().map(function (k) { return m[k]; });
   for (var i = 1; i < fs.length; i++) { // entre deux livraisons : on suppose que les litres livrés la première fois ont été consommés avant la suivante
     var a = fs[i - 1], b = fs[i], d0 = dayNum(a.date), d1 = dayNum(b.date), cov = 0;
@@ -298,7 +301,7 @@ function seasonModel(v) { // consommation par saison : jauge quand elle existe, 
 function capEstimate(v) { // capacité de la cuve déduite des remplissages avec jauge avant et après
   var rows = vehFills(v.id).filter(function (f) { return !f.reading && f.gb != null && f.ga != null && f.liters > 0 && gaugeFrac(f.ga, v) - gaugeFrac(f.gb, v) >= 0.08; });
   if (!rows.length) return null;
-  var sL = 0, sF = 0, each = rows.map(function (f) { var d = gaugeFrac(f.ga, v) - gaugeFrac(f.gb, v); sL += f.liters; sF += d; return f.liters / d; }).sort(function (a, b) { return a - b; });
+  var sL = 0, sF = 0, each = rows.map(function (f) { var d = gaugeFrac(f.ga, v) - gaugeFrac(f.gb, v); sL += keptL(f); sF += d; return keptL(f) / d; }).sort(function (a, b) { return a - b; });
   return { n: rows.length, est: sL / sF, med: each[Math.floor(each.length / 2)], min: each[0], max: each[each.length - 1] };
 }
 function r50(x) { return Math.round(x / 50) * 50; }
@@ -310,7 +313,7 @@ function seasonChart(rows) { // rows: [{label, lan, ppl, partial}] ; deux courbe
   var pmin = ps.length ? Math.min.apply(null, ps.map(function (r) { return r.ppl; })) : 0, pmax = ps.length ? Math.max.apply(null, ps.map(function (r) { return r.ppl; })) : 1, pad = (pmax - pmin) * 0.25 || pmax * 0.1 || 0.1; pmin = Math.max(0, pmin - pad); pmax += pad;
   var x = function (i) { return L + (n > 1 ? i / (n - 1) : 0.5) * (W - L - R); }, y = function (f) { return T + (1 - f) * (H - T - B); }, yl = function (v) { return y(v / lmax); }, yp = function (v) { return y((v - pmin) / (pmax - pmin)); };
   var fp = function (v) { return v.toFixed(2).replace('.', ','); };
-  var line = function (key, fy, cls, dy, fmt) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/><text x="' + p[0].toFixed(1) + '" y="' + (p[1] + dy).toFixed(1) + '" text-anchor="middle" class="gt gv ' + (key === 'lan' ? 'c1' : 'c2') + '">' + (key === 'lan' && p[2].est ? '~' : '') + fmt(p[2][key]) + '</text>'; }).join(''); };
+  var line = function (key, fy, cls, dy0, fmt) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { var other = key === 'lan' ? p[2].ppl : p[2].lan, oy = other == null ? null : (key === 'lan' ? yp(other) : yl(other)), dy = oy != null && oy < p[1] ? 15 : -8; if (oy == null || oy === p[1]) dy = key === 'lan' ? -8 : 14; return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/><text x="' + p[0].toFixed(1) + '" y="' + (p[1] + dy).toFixed(1) + '" text-anchor="middle" class="gt gv ' + (key === 'lan' ? 'c1' : 'c2') + '">' + (key === 'lan' && p[2].est ? '~' : '') + fmt(p[2][key]) + '</text>'; }).join(''); };
   var h = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="gchart" role="img" aria-label="Consommation annuelle et prix moyen du litre par saison">';
   for (var k = 0; k <= DIV; k++) {
     var f = k / DIV, yy = y(f).toFixed(1);
