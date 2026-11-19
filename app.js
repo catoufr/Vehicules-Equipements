@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.13.2';
+var APP_VERSION = '0.13.3';
 var APP_DATE = '14 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -563,15 +563,17 @@ function enhanceDates(root) {
     var show = function () { var v = nat.value; tx.value = v ? v.slice(8, 10) + '/' + v.slice(5, 7) + '/' + v.slice(0, 4) : ''; tx.setCustomValidity(''); };
     Object.defineProperty(nat, 'value', { configurable: true, get: function () { return setter.get.call(nat); }, set: function (v) { setter.set.call(nat, v); show(); } });
     show();
+    var busy = false;
     tx.addEventListener('input', function () {
+      busy = true;
       var iso = parseDateFr(tx.value);
       if (tx.value.trim() === '') { setter.set.call(nat, ''); tx.setCustomValidity(''); }
       else if (iso && /^\d{1,2}\D\d{1,2}\D\d{2,4}$|^\d{6}$|^\d{8}$|^\d{4}-\d{2}-\d{2}$/.test(tx.value.trim())) { setter.set.call(nat, iso); tx.setCustomValidity(''); }
       else { setter.set.call(nat, ''); tx.setCustomValidity('Date invalide (jj/mm/aaaa)'); }
-      nat.dispatchEvent(new Event('change', { bubbles: true }));
+      nat.dispatchEvent(new Event('change', { bubbles: true })); busy = false;
     });
     tx.addEventListener('blur', function () { var iso = parseDateFr(tx.value); if (iso) { setter.set.call(nat, iso); show(); nat.dispatchEvent(new Event('change', { bubbles: true })); } });
-    nat.addEventListener('change', function () { show(); });
+    nat.addEventListener('change', function () { if (!busy) show(); });
     btn.addEventListener('click', function () { try { nat.showPicker(); } catch (e) { nat.focus(); nat.click(); } });
   });
 }
