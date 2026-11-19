@@ -57,10 +57,7 @@ function cuveStats(id) {
   }
   o.avgPrice = o.litersPriced > 0 ? o.eur / o.litersPriced : null;
   var ev = data.vehicles.filter(function (x) { return x.id === id; })[0];
-  if (ev && capL(ev)) { // consommation mesurée avec la jauge : plus fiable que les litres achetés
-    var ok = gaugeSegments(ev).filter(function (x) { return !x.bad && x.used >= 0; }), d = ok.reduce(function (t, x) { return t + x.days; }, 0);
-    if (d >= 60) { o.perYear = ok.reduce(function (t, x) { return t + x.used; }, 0) / d * 365; o.src = 'jauge'; }
-  }
+  if (ev) { var M = seasonModel(ev); if (M.lanTotal != null) { o.perYear = M.lanTotal; o.src = M.src; } }
   return o;
 }
 function cuveItem(f) {
@@ -78,8 +75,8 @@ function cuveSection(v) {
       ['Remplissages', String(s.n)], ['Litres achetés', fmtL(s.liters)], ['Dépense', fmtEur(s.eur)],
       ['Prix moyen payé', s.avgPrice != null ? fmtPpl(s.avgPrice) : ''],
       ['Intervalle moyen entre remplissages', s.avgGap != null ? Math.round(s.avgGap) + ' jours' : ''],
-      [s.src === 'jauge' ? 'Consommation moyenne par an (jauge)' : 'Consommation estimée par an', s.perYear != null ? fmtL(s.perYear) : '']]) +
-      '<div class="muted">' + (s.src === 'jauge' ? 'Mesurée avec les niveaux de jauge (voir « Jauge et tendance »). ' : '') + 'À défaut de jauge, la consommation estimée = litres achetés (sauf le dernier remplissage) ÷ durée entre le premier et le dernier remplissage ; elle suppose une cuve remplie à un niveau comparable. ' + (v.capacity ? 'Capacité de la cuve : ' + esc(v.capacity) + '.' : '') + '</div></div>';
+      [s.src ? 'Consommation moyenne par an (' + s.src + ')' : 'Consommation estimée par an', s.perYear != null ? fmtL(s.perYear) : '']]) +
+      '<div class="muted">' + (s.src ? 'Calculée selon la source indiquée (voir « Consommation et tendance »). ' : '') + 'Sinon : litres achetés (sauf le dernier remplissage) ÷ durée entre le premier et le dernier remplissage. ' + (v.capacity ? 'Capacité de la cuve : ' + esc(v.capacity) + '.' : '') + '</div></div>';
     h += '<h3>Par saison de chauffe (juin → mai)</h3><div class="card list">' + s.seasons.map(function (x) {
       return '<div class="item"><div><b>' + esc(x.label) + '</b><div class="muted">' + x.n + ' remplissage' + (x.n > 1 ? 's' : '') + (x.lp ? ' · ' + fmtPpl(x.eur / x.lp) : '') + '</div></div><div style="text-align:right"><b>' + fmtL(x.liters) + '</b><div class="muted">' + fmtEur(x.eur) + '</div></div></div>';
     }).join('') + '</div>';
@@ -267,12 +264,36 @@ function gaugeSegments(v) { // consommation entre deux niveaux connus
   });
   return segs;
 }
-function splitSeasons(seg, out) { // répartit une période sur les saisons de chauffe, au prorata des jours
-  var d0 = dayNum(seg.from), d1 = dayNum(seg.to), cur = d0;
-  while (cur < d1) {
-    var ds = new Date(cur * 86400000).toISOString().slice(0, 10), y = +ds.slice(0, 4), m = +ds.slice(5, 7), nxt = Date.UTC(m >= 6 ? y + 1 : y, 5, 1) / 86400000, end = Math.min(d1, nxt), k = seasonOf(ds);
-    var o = out[k] || (out[k] = { label: k, used: 0, days: 0 }); o.days += end - cur; o.used += seg.used * (end - cur) / (d1 - d0); cur = end;
+var MW = [1.0, 0.9, 0.8, 0.5, 0.25, 0.1, 0.05, 0.05, 0.15, 0.45, 0.75, 1.0]; // poids de chauffe par mois (janv. → déc.) : répartit la consommation dans l'année
+var WYEAR = MW.reduce(function (t, w) { return t + w * 365 / 12; }, 0);
+function alloc(d0, d1, used, est, out) { // répartit une consommation entre deux dates sur les saisons, selon le poids de chauffe des jours
+  if (d1 <= d0) return;
+  var per = {}, tot = 0, cur;
+  for (cur = d0; cur < d1; cur++) { var ds = new Date(cur * 86400000).toISOString().slice(0, 10), w = MW[+ds.slice(5, 7) - 1], k = seasonOf(ds), o = per[k] || (per[k] = { w: 0, d: 0 }); o.w += w; o.d++; tot += w; }
+  Object.keys(per).forEach(function (k) {
+    var o = out[k] || (out[k] = { label: k, used: 0, days: 0, w: 0, est: 0 });
+    o.used += used * per[k].w / tot; o.days += per[k].d; o.w += per[k].w; if (est) o.est += per[k].d;
+  });
+}
+function seasonModel(v) { // consommation par saison : jauge quand elle existe, sinon estimée avec les livraisons
+  var seas = {}, segs = gaugeSegments(v), ok = segs.filter(function (x) { return !x.bad && x.used >= 0; }), nG = 0, nE = 0;
+  ok.forEach(function (x) { alloc(dayNum(x.from), dayNum(x.to), x.used, false, seas); nG++; });
+  var m = {}; cuveFills(v.id).forEach(function (f) { var o = m[f.date] || (m[f.date] = { date: f.date, liters: 0 }); o.liters += f.liters || 0; });
+  var fs = Object.keys(m).sort().map(function (k) { return m[k]; });
+  for (var i = 1; i < fs.length; i++) { // entre deux livraisons : on suppose que les litres livrés la première fois ont été consommés avant la suivante
+    var a = fs[i - 1], b = fs[i], d0 = dayNum(a.date), d1 = dayNum(b.date), cov = 0;
+    ok.forEach(function (x) { cov += Math.max(0, Math.min(d1, dayNum(x.to)) - Math.max(d0, dayNum(x.from))); });
+    if (d1 > d0 && cov <= (d1 - d0) / 2) { alloc(d0, d1, a.liters, true, seas); nE++; }
   }
+  var rows = Object.keys(seas).sort().map(function (k) { var o = seas[k], cv = o.w / WYEAR; return { label: k, used: o.used, days: o.days, cover: cv, est: o.est > o.days / 2, lan: cv >= 0.2 ? o.used / cv : null, partial: cv < 0.9 }; });
+  var used = rows.reduce(function (t, r) { return t + r.used; }, 0), days = rows.reduce(function (t, r) { return t + r.days; }, 0), cvt = rows.reduce(function (t, r) { return t + r.cover; }, 0);
+  var tr = rows.filter(function (r) { return r.lan != null && r.cover >= 0.6; }), trend = null;
+  if (tr.length >= 2) {
+    var xs = tr.map(function (r) { return +r.label.slice(0, 4); }), ys = tr.map(function (r) { return r.lan; }), n = tr.length, mx = xs.reduce(function (a, b) { return a + b; }, 0) / n, my = ys.reduce(function (a, b) { return a + b; }, 0) / n, sxy = 0, sxx = 0;
+    xs.forEach(function (x, i) { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) * (x - mx); });
+    trend = { n: n, pct: sxx ? sxy / sxx / my : (ys[n - 1] / ys[0] - 1) / Math.max(1, xs[n - 1] - xs[0]), first: tr[0].label, last: tr[n - 1].label };
+  }
+  return { rows: rows, used: used, days: days, lanTotal: cvt >= 0.3 ? used / cvt : null, src: nG && nE ? 'jauge + livraisons' : nG ? 'jauge' : 'livraisons', nG: nG, nE: nE, trend: trend };
 }
 function capEstimate(v) { // capacité de la cuve déduite des remplissages avec jauge avant et après
   var rows = vehFills(v.id).filter(function (f) { return !f.reading && f.gb != null && f.ga != null && f.liters > 0 && gaugeFrac(f.ga, v) - gaugeFrac(f.gb, v) >= 0.08; });
@@ -289,7 +310,7 @@ function seasonChart(rows) { // rows: [{label, lan, ppl, partial}] ; deux courbe
   var pmin = ps.length ? Math.min.apply(null, ps.map(function (r) { return r.ppl; })) : 0, pmax = ps.length ? Math.max.apply(null, ps.map(function (r) { return r.ppl; })) : 1, pad = (pmax - pmin) * 0.25 || pmax * 0.1 || 0.1; pmin = Math.max(0, pmin - pad); pmax += pad;
   var x = function (i) { return L + (n > 1 ? i / (n - 1) : 0.5) * (W - L - R); }, y = function (f) { return T + (1 - f) * (H - T - B); }, yl = function (v) { return y(v / lmax); }, yp = function (v) { return y((v - pmin) / (pmax - pmin)); };
   var fp = function (v) { return v.toFixed(2).replace('.', ','); };
-  var line = function (key, fy, cls, dy, fmt) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/><text x="' + p[0].toFixed(1) + '" y="' + (p[1] + dy).toFixed(1) + '" text-anchor="middle" class="gt gv ' + (key === 'lan' ? 'c1' : 'c2') + '">' + fmt(p[2][key]) + '</text>'; }).join(''); };
+  var line = function (key, fy, cls, dy, fmt) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/><text x="' + p[0].toFixed(1) + '" y="' + (p[1] + dy).toFixed(1) + '" text-anchor="middle" class="gt gv ' + (key === 'lan' ? 'c1' : 'c2') + '">' + (key === 'lan' && p[2].est ? '~' : '') + fmt(p[2][key]) + '</text>'; }).join(''); };
   var h = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="gchart" role="img" aria-label="Consommation annuelle et prix moyen du litre par saison">';
   for (var k = 0; k <= DIV; k++) {
     var f = k / DIV, yy = y(f).toFixed(1);
@@ -303,43 +324,41 @@ function seasonChart(rows) { // rows: [{label, lan, ppl, partial}] ; deux courbe
   return h + '</svg><div class="gleg"><span class="c1">● Consommation moyenne par an (L)</span><span class="c2">● Prix moyen du litre (€)</span></div>';
 }
 function gaugeSection(v) {
-  var h = '<h3>Jauge et tendance</h3>', ce = capEstimate(v), cap = capL(v);
+  var h = '<h3>Consommation et tendance</h3>', ce = capEstimate(v), cap = capL(v);
   if (ce) {
     var rec = r50(ce.est);
     h += '<div class="card">' + kv([['Capacité estimée de la cuve', '≈ ' + fmtN(ce.est) + ' L'], ['Basée sur', ce.n + ' remplissage' + (ce.n > 1 ? 's' : '') + ' (de ' + fmtN(ce.min) + ' à ' + fmtN(ce.max) + ' L, médiane ' + fmtN(ce.med) + ' L)'], ['Capacité saisie', cap ? fmtN(cap) + ' L' : 'non renseignée']]) +
       '<div class="muted">Litres facturés ÷ variation de la jauge. Chaque lecture est précise à quelques % près : plus il y a de remplissages, plus l\'estimation est fiable.</div>' +
       (cap && Math.abs(rec - cap) < 1 ? '' : '<div class="actions"><button data-act="setCap" data-id="' + esc(v.id) + '" data-cap="' + rec + '">Utiliser ' + fmtN(rec) + ' L comme capacité</button></div>') + '</div>';
   }
-  var ev = gaugeEvents(v).filter(function (e) { return e.b != null || e.a != null; });
-  if (!cap) return h + '<div class="card muted">Renseignez la capacité de la cuve dans la fiche (ou utilisez l\'estimation ci-dessus) pour convertir la jauge en litres.</div>';
-  if (!ev.length) return h + '<div class="card muted">Indiquez la jauge (%) lors des remplissages ou par des relevés pour obtenir la consommation réelle et sa tendance.</div>';
-  var segs = gaugeSegments(v), ok = segs.filter(function (x) { return !x.bad && x.used >= 0; });
-  // saisons : consommation (jauge) et prix moyen du litre (remplissages)
-  var seas = {}; ok.forEach(function (x) { splitSeasons(x, seas); });
+  var M = seasonModel(v), ev = gaugeEvents(v).filter(function (e) { return e.b != null || e.a != null; }), hasG = vehFills(v.id).some(function (f) { return f.gb != null || f.ga != null; });
+  if (hasG && !cap) h += '<div class="card muted">Renseignez la capacité de la cuve dans la fiche (ou utilisez l\'estimation ci-dessus) pour convertir la jauge en litres.</div>';
+  var rows = M.rows;
+  if (!rows.length) return h + '<div class="card muted">Il faut au moins deux livraisons à des dates différentes (ou deux niveaux de jauge) pour estimer la consommation.</div>';
   var price = {}; cuveFills(v.id).forEach(function (f) { var c = fillCost(f); if (c > 0 && f.liters > 0) { var k = seasonOf(f.date), o = price[k] || (price[k] = { c: 0, l: 0 }); o.c += c; o.l += f.liters; } });
-  var keys = Object.keys(seas).concat(Object.keys(price).filter(function (k) { return !seas[k]; })).sort();
-  var rows = keys.map(function (k) { var o = seas[k], p = price[k]; return { label: k, used: o ? o.used : null, days: o ? o.days : 0, lan: o && o.days >= 30 ? o.used / o.days * 365 : null, ppl: p ? p.c / p.l : null, partial: !o || o.days < 330 }; });
-  if (ok.length) {
-    var used = ok.reduce(function (s, x) { return s + x.used; }, 0), days = ok.reduce(function (s, x) { return s + x.days; }, 0);
-    h += '<div class="card"><div class="muted">Par saison de chauffe (juin → mai)</div>' + seasonChart(rows) + '</div>';
-    h += '<div class="card">' + kv([['Consommation mesurée (jauge)', fmtL(used) + ' sur ' + days + ' jours'], ['Moyenne par jour', (used / days).toFixed(2).replace('.', ',') + ' L'], ['Équivalent par an', fmtL(used / days * 365)]]) +
-      (segs.some(function (x) { return x.bad; }) ? '<div class="muted">⚠️ Une période donne une consommation négative (jauge ou date à vérifier) : elle est ignorée.</div>' : '') + '</div>';
-    h += '<h3>Détail par saison</h3><div class="card list">' + rows.slice().reverse().map(function (x, i, arr) {
-      var prev = arr[i + 1], trend = prev && prev.lan != null && x.lan != null && x.days > 60 && prev.days > 60 ? x.lan / prev.lan - 1 : null;
-      return '<div class="item"><div><b>' + esc(x.label) + '</b><div class="muted">' + (x.days ? x.days + ' jours mesurés' + (x.days < 330 ? ' (saison incomplète)' : '') : 'pas de mesure de jauge') + (trend != null ? ' · ' + (trend >= 0 ? '+' : '') + Math.round(trend * 100) + ' % vs ' + esc(prev.label) : '') + '</div></div>' +
-        '<div style="text-align:right"><b>' + (x.lan != null ? fmtL(x.lan) + ' /an' : '—') + '</b><div class="muted">' + (x.ppl != null ? x.ppl.toFixed(3).replace('.', ',') + ' €/L' : '') + '</div></div></div>';
-    }).join('') + '</div>';
-  } else h += '<div class="card muted">Il faut au moins deux niveaux de jauge à des dates différentes pour calculer la consommation.</div>';
+  Object.keys(price).forEach(function (k) { if (!rows.some(function (r) { return r.label === k; })) rows.push({ label: k, used: 0, days: 0, cover: 0, est: false, lan: null, partial: true }); });
+  rows.sort(function (a, b) { return a.label.localeCompare(b.label); });
+  rows.forEach(function (r) { var p = price[r.label]; r.ppl = p ? p.c / p.l : null; });
+  h += '<div class="card"><div class="muted">Par saison de chauffe (juin → mai)</div>' + seasonChart(rows) + '</div>';
+  h += '<div class="card">' + kv([['Source du calcul', M.src], ['Consommation sur la période', fmtL(M.used) + ' sur ' + M.days + ' jours'], ['Équivalent par an', M.lanTotal != null ? fmtL(M.lanTotal) : '—']]) +
+    (M.trend ? '<div class="trend">Tendance : ' + (Math.abs(M.trend.pct) < 0.02 ? 'consommation stable' : 'consommation en ' + (M.trend.pct < 0 ? 'baisse' : 'hausse') + ' d\'environ ' + Math.abs(Math.round(M.trend.pct * 100)) + ' % par an') + ' <span class="muted">(' + M.trend.n + ' saisons, de ' + esc(M.trend.first) + ' à ' + esc(M.trend.last) + ')</span></div>' : '') +
+    (M.nE ? '<div class="muted">« ~ » = estimé à partir des livraisons seules : on suppose que les litres livrés sont consommés avant la livraison suivante, et la consommation est répartie selon la saison (hiver &gt; été). Un remplissage partiel ou un stock restant décale un peu une saison vers sa voisine, mais l\'erreur s\'annule sur plusieurs années : fiez-vous à la tendance plus qu\'à une saison isolée. Les relevés de jauge rendent le calcul plus précis.</div>' : '') +
+    '</div>';
+  h += '<h3>Détail par saison</h3><div class="card list">' + rows.slice().reverse().map(function (x, i, arr) {
+    var prev = arr.slice(i + 1).filter(function (r) { return r.lan != null; })[0], trend = prev && x.lan != null && x.cover >= 0.6 && prev.cover >= 0.6 ? x.lan / prev.lan - 1 : null;
+    return '<div class="item"><div><b>' + esc(x.label) + '</b><div class="muted">' + (x.days ? (x.est ? 'estimée (livraisons)' : 'mesurée (jauge)') + (x.partial ? ' · saison incomplète' : '') : 'pas assez de données') + (trend != null ? ' · ' + (trend >= 0 ? '+' : '') + Math.round(trend * 100) + ' % vs ' + esc(prev.label) : '') + '</div></div>' +
+      '<div style="text-align:right"><b>' + (x.lan != null ? (x.est ? '~' : '') + fmtL(x.lan) + ' /an' : '—') + '</b><div class="muted">' + (x.ppl != null ? x.ppl.toFixed(3).replace('.', ',') + ' €/L' : '') + '</div></div></div>';
+  }).join('') + '</div>';
   // courbe du niveau (repliée)
   var pts = []; ev.forEach(function (e) { if (e.b != null) pts.push([dayNum(e.date), e.b]); if (e.a != null && !e.reading) pts.push([dayNum(e.date), e.a]); });
-  if (pts.length > 1) {
+  if (cap && pts.length > 1) {
     var x0 = pts[0][0], x1 = pts[pts.length - 1][0] || x0 + 1, W = 300, H = 110, px = function (d) { return 8 + (x1 > x0 ? (d - x0) / (x1 - x0) : 0.5) * (W - 16); }, py = function (l) { return H - 10 - Math.max(0, Math.min(1, l / cap)) * (H - 22); };
     h += '<details class="sect"><summary>Niveau de la cuve dans le temps</summary><div class="card"><svg viewBox="0 0 ' + W + ' ' + H + '" class="gchart" role="img" aria-label="Niveau de la cuve dans le temps"><line x1="8" y1="' + py(cap) + '" x2="' + (W - 8) + '" y2="' + py(cap) + '" class="gl"/><line x1="8" y1="' + py(0) + '" x2="' + (W - 8) + '" y2="' + py(0) + '" class="gl"/>' +
       '<polyline fill="none" class="gp1" points="' + pts.map(function (p) { return px(p[0]).toFixed(1) + ',' + py(p[1]).toFixed(1); }).join(' ') + '"/></svg>' +
       '<div class="row"><span class="muted">' + fmtDate(ev[0].date) + '</span><span class="muted">cuve pleine = ' + fmtL(cap) + '</span><span class="muted">' + fmtDate(ev[ev.length - 1].date) + '</span></div></div></details>';
   }
   var rd = vehFills(v.id).filter(function (f) { return f.reading; }).reverse();
-  if (rd.length) h += '<div class="card list">' + rd.map(function (f) { return '<div class="item"><div>' + fmtDate(f.date) + ' · relevé ' + f.ga + ' %<div class="muted">≈ ' + fmtL(gaugeL(f.ga, v)) + '</div></div><button data-act="editJauge" data-id="' + esc(f.id) + '">Modifier</button></div>'; }).join('') + '</div>';
+  if (rd.length) h += '<div class="card list">' + rd.map(function (f) { return '<div class="item"><div>' + fmtDate(f.date) + ' · relevé ' + f.ga + ' %' + (cap ? '<div class="muted">≈ ' + fmtL(gaugeL(f.ga, v)) + '</div>' : '') + '</div><button data-act="editJauge" data-id="' + esc(f.id) + '">Modifier</button></div>'; }).join('') + '</div>';
   return h;
 }
 

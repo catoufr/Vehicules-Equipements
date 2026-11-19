@@ -150,3 +150,5 @@ details.sect > :last-child { margin-bottom: 14px; }
 
 .gchart .gl2 { stroke: var(--line); stroke-width: 1; }
 .gchart .gv { font-size: 9.5px; font-weight: 600; }
+
+.trend { margin-top: 8px; font-weight: 600; }
