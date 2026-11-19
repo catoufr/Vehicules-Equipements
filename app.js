@@ -2,7 +2,7 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.13.1';
+var APP_VERSION = '0.13.2';
 var APP_DATE = '14 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
@@ -269,7 +269,7 @@ function viewData() {
 }
 
 /* ---------- Formulaires (feuille plein écran) ---------- */
-function openSheet(html) { var s = $('#sheet'); s.innerHTML = '<div class="inner">' + html + '</div>'; s.hidden = false; s.scrollTop = 0; }
+function openSheet(html) { var s = $('#sheet'); s.innerHTML = '<div class="inner">' + html + '</div>'; s.hidden = false; s.scrollTop = 0; enhanceDates(s); }
 function closeSheet() { var s = $('#sheet'); s.hidden = true; s.innerHTML = ''; }
 
 var TYPES = ['Voiture', 'Utilitaire', 'Moto', 'Scooter', 'Camping-car', 'Remorque'];
@@ -538,3 +538,40 @@ document.addEventListener('submit', function (e) {
   }
   render();
 })();
+
+/* ---------- Saisie de date au clavier (jj/mm/aaaa) + calendrier ---------- */
+function parseDateFr(t) {
+  t = String(t || '').trim(); if (!t) return '';
+  var m = t.match(/^(\d{1,2})[\/.\-\s](\d{1,2})(?:[\/.\-\s](\d{2}|\d{4}))?$/), d, mo, y;
+  if (m) { d = +m[1]; mo = +m[2]; y = m[3]; }
+  else if ((m = t.match(/^(\d{2})(\d{2})(\d{2}|\d{4})?$/))) { d = +m[1]; mo = +m[2]; y = m[3]; }
+  else if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/))) { d = +m[3]; mo = +m[2]; y = m[1]; }
+  else return null;
+  var now = new Date(); y = y == null ? now.getFullYear() : (String(y).length === 2 ? 2000 + +y : +y);
+  var dt = new Date(Date.UTC(y, mo - 1, d)); if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+function enhanceDates(root) {
+  var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  [].forEach.call(root.querySelectorAll('input[type=date]'), function (nat) {
+    if (nat.getAttribute('data-enh')) return; nat.setAttribute('data-enh', '1');
+    var req = nat.required, wrap = document.createElement('div'); wrap.className = 'dwrap';
+    var tx = document.createElement('input'); tx.type = 'text'; tx.inputMode = 'numeric'; tx.placeholder = 'jj/mm/aaaa'; tx.autocomplete = 'off'; tx.className = 'dtxt'; if (req) tx.required = true;
+    var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'dbtn'; btn.setAttribute('aria-label', 'Choisir dans le calendrier'); btn.textContent = '📅';
+    nat.parentNode.insertBefore(wrap, nat); wrap.appendChild(tx); wrap.appendChild(btn); wrap.appendChild(nat);
+    nat.required = false; nat.className = (nat.className ? nat.className + ' ' : '') + 'dnat'; nat.tabIndex = -1;
+    var show = function () { var v = nat.value; tx.value = v ? v.slice(8, 10) + '/' + v.slice(5, 7) + '/' + v.slice(0, 4) : ''; tx.setCustomValidity(''); };
+    Object.defineProperty(nat, 'value', { configurable: true, get: function () { return setter.get.call(nat); }, set: function (v) { setter.set.call(nat, v); show(); } });
+    show();
+    tx.addEventListener('input', function () {
+      var iso = parseDateFr(tx.value);
+      if (tx.value.trim() === '') { setter.set.call(nat, ''); tx.setCustomValidity(''); }
+      else if (iso && /^\d{1,2}\D\d{1,2}\D\d{2,4}$|^\d{6}$|^\d{8}$|^\d{4}-\d{2}-\d{2}$/.test(tx.value.trim())) { setter.set.call(nat, iso); tx.setCustomValidity(''); }
+      else { setter.set.call(nat, ''); tx.setCustomValidity('Date invalide (jj/mm/aaaa)'); }
+      nat.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    tx.addEventListener('blur', function () { var iso = parseDateFr(tx.value); if (iso) { setter.set.call(nat, iso); show(); nat.dispatchEvent(new Event('change', { bubbles: true })); } });
+    nat.addEventListener('change', function () { show(); });
+    btn.addEventListener('click', function () { try { nat.showPicker(); } catch (e) { nat.focus(); nat.click(); } });
+  });
+}
