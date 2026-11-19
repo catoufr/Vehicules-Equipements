@@ -130,3 +130,8 @@ details.sect > summary::before { content: '▸'; color: var(--muted); }
 details.sect[open] > summary::before { content: '▾'; }
 details.sect > :not(summary) { margin-left: 14px; margin-right: 14px; }
 details.sect > :last-child { margin-bottom: 14px; }
+
+.gchart { width: 100%; height: auto; display: block; margin: 6px 0; }
+.gchart .gl { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+.gchart .gp { stroke: var(--c1); stroke-width: 2; stroke-linejoin: round; }
+.gchart .gd { fill: var(--c1); }
