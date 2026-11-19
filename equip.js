@@ -36,7 +36,7 @@ function viewEquips() {
 }
 
 /* ---------- Statistiques de cuve ---------- */
-function seasonOf(ds) { var y = +ds.slice(0, 4), m = +ds.slice(5, 7); var s = m >= 7 ? y : y - 1; return s + '-' + (s + 1); } // saison de chauffe : 1er juillet → 30 juin
+function seasonOf(ds) { var y = +ds.slice(0, 4), m = +ds.slice(5, 7); var s = m >= 6 ? y : y - 1; return s + '-' + (s + 1); } // saison de chauffe : 1er juin → 31 mai
 function cuveStats(id) {
   var fs = cuveFills(id).slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
   var o = { n: fs.length, liters: 0, eur: 0, litersPriced: 0, seasons: [], avgGap: null, perYear: null };
@@ -80,7 +80,7 @@ function cuveSection(v) {
       ['Intervalle moyen entre remplissages', s.avgGap != null ? Math.round(s.avgGap) + ' jours' : ''],
       [s.src === 'jauge' ? 'Consommation moyenne par an (jauge)' : 'Consommation estimée par an', s.perYear != null ? fmtL(s.perYear) : '']]) +
       '<div class="muted">' + (s.src === 'jauge' ? 'Mesurée avec les niveaux de jauge (voir « Jauge et tendance »). ' : '') + 'À défaut de jauge, la consommation estimée = litres achetés (sauf le dernier remplissage) ÷ durée entre le premier et le dernier remplissage ; elle suppose une cuve remplie à un niveau comparable. ' + (v.capacity ? 'Capacité de la cuve : ' + esc(v.capacity) + '.' : '') + '</div></div>';
-    h += '<h3>Par saison de chauffe (juillet → juin)</h3><div class="card list">' + s.seasons.map(function (x) {
+    h += '<h3>Par saison de chauffe (juin → mai)</h3><div class="card list">' + s.seasons.map(function (x) {
       return '<div class="item"><div><b>' + esc(x.label) + '</b><div class="muted">' + x.n + ' remplissage' + (x.n > 1 ? 's' : '') + (x.lp ? ' · ' + fmtPpl(x.eur / x.lp) : '') + '</div></div><div style="text-align:right"><b>' + fmtL(x.liters) + '</b><div class="muted">' + fmtEur(x.eur) + '</div></div></div>';
     }).join('') + '</div>';
   } else h += '<div class="card muted">Aucun remplissage enregistré.</div>';
@@ -270,7 +270,7 @@ function gaugeSegments(v) { // consommation entre deux niveaux connus
 function splitSeasons(seg, out) { // répartit une période sur les saisons de chauffe, au prorata des jours
   var d0 = dayNum(seg.from), d1 = dayNum(seg.to), cur = d0;
   while (cur < d1) {
-    var ds = new Date(cur * 86400000).toISOString().slice(0, 10), y = +ds.slice(0, 4), m = +ds.slice(5, 7), nxt = Date.UTC(m >= 7 ? y + 1 : y, 6, 1) / 86400000, end = Math.min(d1, nxt), k = seasonOf(ds);
+    var ds = new Date(cur * 86400000).toISOString().slice(0, 10), y = +ds.slice(0, 4), m = +ds.slice(5, 7), nxt = Date.UTC(m >= 6 ? y + 1 : y, 5, 1) / 86400000, end = Math.min(d1, nxt), k = seasonOf(ds);
     var o = out[k] || (out[k] = { label: k, used: 0, days: 0 }); o.days += end - cur; o.used += seg.used * (end - cur) / (d1 - d0); cur = end;
   }
 }
@@ -316,7 +316,7 @@ function gaugeSection(v) {
   var rows = keys.map(function (k) { var o = seas[k], p = price[k]; return { label: k, used: o ? o.used : null, days: o ? o.days : 0, lan: o && o.days >= 30 ? o.used / o.days * 365 : null, ppl: p ? p.c / p.l : null, partial: !o || o.days < 330 }; });
   if (ok.length) {
     var used = ok.reduce(function (s, x) { return s + x.used; }, 0), days = ok.reduce(function (s, x) { return s + x.days; }, 0);
-    h += '<div class="card"><div class="muted">Par saison de chauffe (juillet → juin)</div>' + seasonChart(rows) + '</div>';
+    h += '<div class="card"><div class="muted">Par saison de chauffe (juin → mai)</div>' + seasonChart(rows) + '</div>';
     h += '<div class="card">' + kv([['Consommation mesurée (jauge)', fmtL(used) + ' sur ' + days + ' jours'], ['Moyenne par jour', (used / days).toFixed(2).replace('.', ',') + ' L'], ['Équivalent par an', fmtL(used / days * 365)]]) +
       (segs.some(function (x) { return x.bad; }) ? '<div class="muted">⚠️ Une période donne une consommation négative (jauge ou date à vérifier) : elle est ignorée.</div>' : '') + '</div>';
     h += '<h3>Détail par saison</h3><div class="card list">' + rows.slice().reverse().map(function (x, i, arr) {
