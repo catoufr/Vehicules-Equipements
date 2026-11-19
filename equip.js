@@ -282,19 +282,24 @@ function capEstimate(v) { // capacité de la cuve déduite des remplissages avec
 }
 function r50(x) { return Math.round(x / 50) * 50; }
 function fmtN(x) { return Math.round(x).toLocaleString('fr-FR').replace(/ /g, ' '); }
-function seasonChart(rows) { // rows: [{label, lan, ppl, partial}] ; deux courbes : L/an (gauche) et €/L (droite)
-  var W = 320, H = 170, L = 38, R = 38, T = 14, B = 26, n = rows.length;
+function seasonChart(rows) { // rows: [{label, lan, ppl, partial}] ; deux courbes : L/an (gauche) et €/L (droite), grille en pointillé
+  var W = 340, H = 210, L = 46, R = 44, T = 16, B = 26, n = rows.length, DIV = 5;
   var ls = rows.filter(function (r) { return r.lan != null; }), ps = rows.filter(function (r) { return r.ppl != null; });
-  var lmax = Math.max.apply(null, ls.map(function (r) { return r.lan; }).concat([1])) * 1.12;
-  var pmin = ps.length ? Math.min.apply(null, ps.map(function (r) { return r.ppl; })) : 0, pmax = ps.length ? Math.max.apply(null, ps.map(function (r) { return r.ppl; })) : 1, pad = (pmax - pmin) * 0.2 || pmax * 0.1 || 0.1; pmin = Math.max(0, pmin - pad); pmax += pad;
-  var x = function (i) { return L + (n > 1 ? i / (n - 1) : 0.5) * (W - L - R); }, yl = function (v) { return T + (1 - v / lmax) * (H - T - B); }, yp = function (v) { return T + (1 - (v - pmin) / (pmax - pmin)) * (H - T - B); };
-  var line = function (key, fy, cls) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/>'; }).join(''); };
+  var top = Math.max.apply(null, ls.map(function (r) { return r.lan; }).concat([1])) * 1.1, raw = top / DIV, steps = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000], step = steps.filter(function (x) { return x >= raw; })[0] || Math.ceil(raw / 1000) * 1000, lmax = step * DIV;
+  var pmin = ps.length ? Math.min.apply(null, ps.map(function (r) { return r.ppl; })) : 0, pmax = ps.length ? Math.max.apply(null, ps.map(function (r) { return r.ppl; })) : 1, pad = (pmax - pmin) * 0.25 || pmax * 0.1 || 0.1; pmin = Math.max(0, pmin - pad); pmax += pad;
+  var x = function (i) { return L + (n > 1 ? i / (n - 1) : 0.5) * (W - L - R); }, y = function (f) { return T + (1 - f) * (H - T - B); }, yl = function (v) { return y(v / lmax); }, yp = function (v) { return y((v - pmin) / (pmax - pmin)); };
+  var fp = function (v) { return v.toFixed(2).replace('.', ','); };
+  var line = function (key, fy, cls, dy, fmt) { var pts = []; rows.forEach(function (r, i) { if (r[key] != null) pts.push([x(i), fy(r[key]), r, i]); }); return (pts.length > 1 ? '<polyline fill="none" class="' + cls + '" points="' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '"/>' : '') + pts.map(function (p) { return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" class="' + cls + 'd' + (p[2].partial && key === 'lan' ? ' part' : '') + '"/><text x="' + p[0].toFixed(1) + '" y="' + (p[1] + dy).toFixed(1) + '" text-anchor="middle" class="gt gv ' + (key === 'lan' ? 'c1' : 'c2') + '">' + fmt(p[2][key]) + '</text>'; }).join(''); };
   var h = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="gchart" role="img" aria-label="Consommation annuelle et prix moyen du litre par saison">';
-  h += '<line x1="' + L + '" y1="' + yl(0) + '" x2="' + (W - R) + '" y2="' + yl(0) + '" class="gl"/><line x1="' + L + '" y1="' + yl(lmax) + '" x2="' + (W - R) + '" y2="' + yl(lmax) + '" class="gl"/>';
-  h += '<text x="' + (L - 4) + '" y="' + (yl(0) + 3) + '" text-anchor="end" class="gt c1">0</text><text x="' + (L - 4) + '" y="' + (yl(lmax) + 9) + '" text-anchor="end" class="gt c1">' + fmtN(lmax) + ' L</text>';
-  h += '<text x="' + (W - R + 4) + '" y="' + (yp(pmin) + 3) + '" class="gt c2">' + pmin.toFixed(2).replace('.', ',') + '</text><text x="' + (W - R + 4) + '" y="' + (yp(pmax) + 9) + '" class="gt c2">' + pmax.toFixed(2).replace('.', ',') + ' €</text>';
-  h += line('lan', yl, 'gp1') + line('ppl', yp, 'gp2');
-  rows.forEach(function (r, i) { h += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" class="gt">' + esc(r.label.slice(2, 4) + '-' + r.label.slice(7)) + '</text>'; });
+  for (var k = 0; k <= DIV; k++) {
+    var f = k / DIV, yy = y(f).toFixed(1);
+    h += '<line x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy + '" class="gl"/>' +
+      '<text x="' + (L - 5) + '" y="' + (+yy + 3) + '" text-anchor="end" class="gt c1">' + fmtN(lmax * f) + '</text>' +
+      '<text x="' + (W - R + 5) + '" y="' + (+yy + 3) + '" class="gt c2">' + fp(pmin + (pmax - pmin) * f) + '</text>';
+  }
+  h += '<text x="' + L + '" y="9" class="gt c1">L / an</text><text x="' + (W - R) + '" y="9" text-anchor="end" class="gt c2">€ / L</text>';
+  rows.forEach(function (r, i) { h += '<line x1="' + x(i).toFixed(1) + '" y1="' + y(0) + '" x2="' + x(i).toFixed(1) + '" y2="' + (y(0) + 3) + '" class="gl2"/><text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" class="gt">' + esc(r.label.slice(2, 4) + '-' + r.label.slice(7)) + '</text>'; });
+  h += line('lan', yl, 'gp1', -8, fmtN) + line('ppl', yp, 'gp2', 14, fp);
   return h + '</svg><div class="gleg"><span class="c1">● Consommation moyenne par an (L)</span><span class="c2">● Prix moyen du litre (€)</span></div>';
 }
 function gaugeSection(v) {

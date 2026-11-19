@@ -147,3 +147,6 @@ details.sect > :last-child { margin-bottom: 14px; }
 .gchart .part { fill: var(--bg, #fff); stroke: var(--c1); stroke-width: 2; }
 .gchart .gt { font-size: 9px; fill: var(--muted, #6b7378); } .gchart .gt.c1 { fill: var(--c1); } .gchart .gt.c2 { fill: var(--c2); }
 .gleg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; } .gleg .c1 { color: var(--c1); } .gleg .c2 { color: var(--c2); }
+
+.gchart .gl2 { stroke: var(--line); stroke-width: 1; }
+.gchart .gv { font-size: 9.5px; font-weight: 600; }
