@@ -140,3 +140,10 @@ details.sect > :last-child { margin-bottom: 14px; }
 .dwrap .dtxt { flex: 1; min-width: 0; }
 .dwrap .dbtn { width: 48px; flex: none; padding: 0; font-size: 20px; line-height: 1; }
 .dwrap .dnat { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; padding: 0; border: 0; }
+
+.gchart .gp1 { stroke: var(--c1); stroke-width: 2; stroke-linejoin: round; }
+.gchart .gp2 { stroke: var(--c2); stroke-width: 2; stroke-linejoin: round; stroke-dasharray: 5 3; }
+.gchart .gp1d { fill: var(--c1); } .gchart .gp2d { fill: var(--c2); }
+.gchart .part { fill: var(--bg, #fff); stroke: var(--c1); stroke-width: 2; }
+.gchart .gt { font-size: 9px; fill: var(--muted, #6b7378); } .gchart .gt.c1 { fill: var(--c1); } .gchart .gt.c2 { fill: var(--c2); }
+.gleg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; } .gleg .c1 { color: var(--c1); } .gleg .c2 { color: var(--c2); }
