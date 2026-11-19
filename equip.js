@@ -14,7 +14,7 @@ function gaugeFrac(pct, v) {
   var th = 2 * Math.acos(1 - 2 * x); return (th - Math.sin(th)) / (2 * Math.PI);
 }
 function gaugeL(pct, v) { var c = capL(v); return (c != null && pct != null && isFinite(pct)) ? c * gaugeFrac(pct, v) : null; }
-function keptL(f) { return Math.max(0, (f.liters || 0) - (f.lost || 0)); } // litres réellement entrés dans la cuve (hors débordement)
+function keptL(f) { return f.liters || 0; } // litres livrés
 function cuveFills(id) { return vehFills(id).filter(function (f) { return !f.reading; }); }
 function equipList(status) {
   return data.vehicles.filter(function (v) { return v.equip && (v.status || 'actuel') === status; })
@@ -64,7 +64,7 @@ function cuveStats(id) {
 function cuveItem(f) {
   var c = fillCost(f);
   var g = (f.gb != null || f.ga != null) ? 'jauge ' + (f.gb != null ? f.gb + ' %' : '?') + ' → ' + (f.ga != null ? f.ga + ' %' : '?') : '';
-  return '<div class="item"><div><b>' + fmtDate(f.date) + '</b> · ' + fmtL(f.liters) + (f.lost ? ' <span class="muted">(dont ' + fmtL(f.lost) + ' perdus)</span>' : '') +
+  return '<div class="item"><div><b>' + fmtDate(f.date) + '</b> · ' + fmtL(f.liters) +
     '<div class="muted">' + [fmtPpl(f.ppl), c != null ? fmtEur(c) : '', g, f.station || ''].filter(function (x) { return x && x !== '–'; }).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editCuve" data-id="' + esc(f.id) + '">Modifier</button></div></div>';
 }
@@ -158,8 +158,6 @@ function cuveForm(equipId, fillId) {
     fld('Prix au litre (€)', 'ppl', f ? f.ppl : '', { inputmode: 'decimal', ph: last && last.ppl ? 'dernier : ' + String(last.ppl).replace('.', ',') : '' }) + '</div></div>' +
     fld('Montant total (€)', 'total', f ? f.total : '', { inputmode: 'decimal' }) +
     '<div class="muted">Deux des trois valeurs (litres, prix au litre, montant) suffisent : la troisième est calculée.</div>' +
-    fld('Dont litres perdus (débordement, facultatif)', 'lost', f && f.lost ? f.lost : '', { inputmode: 'decimal' }) +
-    '<div class="muted">À renseigner si du fioul a débordé : ces litres sont payés mais ne comptent pas dans la consommation.</div>' +
     '<h2>Jauge (facultatif)</h2><div class="pair"><div>' + fld('Avant le remplissage (%)', 'gb', f && f.gb != null ? f.gb : '', { inputmode: 'decimal' }) + '</div><div>' + fld('Après (%)', 'ga', f && f.ga != null ? f.ga : '', { inputmode: 'decimal' }) + '</div></div>' +
     '<div class="muted" id="gHint"></div>' +
     fld('Fournisseur (facultatif)', 'station', f ? f.station : '') +
@@ -169,7 +167,7 @@ function cuveForm(equipId, fillId) {
 }
 async function saveCuve(form) {
   var fd = new FormData(form), id = form.getAttribute('data-id'), vid = form.getAttribute('data-vid'), g = function (k) { return (fd.get(k) || '').toString().trim(); };
-  var date = g('date'), L = num(g('liters')), P = num(g('ppl')), T = num(g('total')), gb = num(g('gb')), ga = num(g('ga')), lost = num(g('lost'));
+  var date = g('date'), L = num(g('liters')), P = num(g('ppl')), T = num(g('total')), gb = num(g('gb')), ga = num(g('ga'));
   var ev = data.vehicles.filter(function (x) { return x.id === vid; })[0];
   if (!(L > 0) && gb != null && ga != null && ev && capL(ev)) L = Math.round(gaugeL(ga, ev) - gaugeL(gb, ev)); // litres déduits de la jauge
   if (!date || !(L > 0)) { toast('Date et litres requis (ou jauge avant et après avec la capacité de la cuve)'); return; }
@@ -178,7 +176,7 @@ async function saveCuve(form) {
   if (T == null && P != null) T = Math.round(L * P * 100) / 100;
   var old = id ? data.fills.filter(function (x) { return x.id === id; })[0] : null;
   var f = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now() };
-  Object.assign(f, { vehicleId: vid, date: date, km: null, liters: L, ppl: P, total: T, full: true, gb: gb, ga: ga, lost: lost > 0 ? lost : null, station: g('station'), updatedAt: Date.now() });
+  Object.assign(f, { vehicleId: vid, date: date, km: null, liters: L, ppl: P, total: T, full: true, gb: gb, ga: ga, station: g('station'), updatedAt: Date.now() });
   await dbPut('fills', f); await reload(); closeSheet(); go('vehicle', vid); toast('Remplissage enregistré');
 }
 
