@@ -5,12 +5,12 @@
 
 function isEquip(v) { return !!(v && v.equip); }
 /* ---------- Jauge de la cuve ---------- */
-// La jauge indique une hauteur (%) : dans une cuve cylindrique couchée, le volume n'est pas proportionnel à la hauteur
+// Par défaut (cadran imprimé du boîtier, déjà gradué en volume) le % est linéaire. Mode « hauteur » : la jauge indique une hauteur (%) : dans une cuve cylindrique couchée, le volume n'est pas proportionnel à la hauteur
 // (la jauge bouge lentement vers 50 %, vite près du vide et du plein). Volume = (θ − sin θ) / 2π avec θ = 2·arccos(1 − 2·hauteur).
 function capL(v) { var n = parseFloat(String(v.capacity || '').replace(/\s/g, '').replace(',', '.').replace(/[^0-9.]/g, '')); return n > 0 ? n : null; }
 function gaugeFrac(pct, v) {
   var x = Math.min(1, Math.max(0, pct / 100));
-  if (v.gaugeMode === 'volume') return x; // jauge déjà linéaire en volume
+  if (v.gaugeMode !== 'hauteur') return x; // défaut : cadran gradué en volume, donc linéaire
   var th = 2 * Math.acos(1 - 2 * x); return (th - Math.sin(th)) / (2 * Math.PI);
 }
 function gaugeL(pct, v) { var c = capL(v); return (c != null && pct != null && isFinite(pct)) ? c * gaugeFrac(pct, v) : null; }
@@ -119,7 +119,7 @@ function equipForm(id) {
     fld('Marque', 'make', v.make) + fld('Modèle', 'model', v.model) +
     fld('Puissance (kW)', 'powerKw', v.powerKw, { inputmode: 'decimal' }) +
     fld('Capacité de la cuve (ex. 1 500 L)', 'capacity', v.capacity) +
-    '<label for="f_gaugeMode">La jauge indique</label><select id="f_gaugeMode" name="gaugeMode"><option value="hauteur"' + (v.gaugeMode !== 'volume' ? ' selected' : '') + '>La hauteur de fioul (cuve cylindrique couchée : le % n\'est pas proportionnel au volume)</option><option value="volume"' + (v.gaugeMode === 'volume' ? ' selected' : '') + '>Le volume (jauge linéaire)</option></select>' +
+    '<label for="f_gaugeMode">La jauge indique</label><select id="f_gaugeMode" name="gaugeMode"><option value="volume"' + (v.gaugeMode !== 'hauteur' ? ' selected' : '') + '>Le volume (cadran gradué en % de volume, cas habituel)</option><option value="hauteur"' + (v.gaugeMode === 'hauteur' ? ' selected' : '') + '>La hauteur de fioul (cuve couchée : % non proportionnel au volume)</option></select>' +
     fld('Emplacement', 'place', v.place, { ph: 'Cave, garage…' }) +
     fld('Mise en service', 'since', v.since, { type: 'date' }) +
     fld('Prix d\'achat (€)', 'price', (v.purchase || {}).price, { inputmode: 'decimal' }) +
@@ -136,7 +136,7 @@ async function saveEquip(form) {
   var old = id ? data.vehicles.filter(function (x) { return x.id === id; })[0] : null;
   var v = old ? Object.assign({}, old) : { id: uid(), createdAt: Date.now(), purchase: {}, exit: {}, extra: [] };
   Object.assign(v, { equip: true, name: g('name'), type: g('type'), energy: g('energy') || 'Fioul', status: g('status') || 'actuel', make: g('make'), model: g('model'),
-    powerKw: g('powerKw'), capacity: g('capacity'), gaugeMode: g('gaugeMode') || 'hauteur', place: g('place'), since: g('since'), vin: g('vin'), notes: g('notes'), updatedAt: Date.now() });
+    powerKw: g('powerKw'), capacity: g('capacity'), gaugeMode: g('gaugeMode') || 'volume', place: g('place'), since: g('since'), vin: g('vin'), notes: g('notes'), updatedAt: Date.now() });
   v.purchase = Object.assign({}, v.purchase || {}, { price: num(g('price')), date: g('pdate') });
   if (!v.fuel && /fioul/i.test(v.energy)) v.fuel = 'Fioul';
   await dbPut('vehicles', v);
