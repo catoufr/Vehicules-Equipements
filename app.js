@@ -2,8 +2,8 @@
 /* Suivi véhicules & équipements — étape 0.1 (socle)
    Stockage local IndexedDB (nom propre à cette appli), véhicules, relevés kilométriques, export / import. */
 
-var APP_VERSION = '0.15.4';
-var APP_DATE = '14 novembre 2026';
+var APP_VERSION = '0.15.5';
+var APP_DATE = '21 novembre 2026';
 var DB_NAME = 'veh_equip_db';
 var FORMAT = 'suivi-vehicules-equipements';
 

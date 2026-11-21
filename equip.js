@@ -93,7 +93,7 @@ function cuveSection(v) {
     }).join('') + '</div>';
   } else h += '<div class="card muted">Aucun remplissage enregistré.</div>';
   h += gaugeSection(v);
-  h += '<div class="actions"><button class="primary" data-act="addCuve" data-id="' + esc(v.id) + '">＋ Remplissage de cuve</button><button data-act="addJauge" data-id="' + esc(v.id) + '">＋ Relevé de jauge</button><button data-act="impCuve" data-id="' + esc(v.id) + '">Coller une liste (papier)</button></div>';
+  h += '<div class="actions"><button class="primary" data-act="addCuve" data-id="' + esc(v.id) + '">＋ Remplissage de cuve</button><button data-act="addJauge" data-id="' + esc(v.id) + '">＋ Relevé de jauge</button></div>';
   if (fs.length) h += '<h3>Remplissages (' + fs.length + ')</h3><div class="card list">' + fs.map(cuveItem).join('') + '</div>';
   return h;
 }
@@ -203,7 +203,6 @@ document.addEventListener('click', function (e) {
   else if (act === 'setCap') { var ev0 = data.vehicles.filter(function (x) { return x.id === id; })[0]; if (ev0) run(dbPut('vehicles', Object.assign({}, ev0, { capacity: el.getAttribute('data-cap') + ' L', updatedAt: Date.now() })).then(reload).then(function () { go('vehicle', id); toast('Capacité mise à jour'); })); }
   else if (act === 'addJauge') jaugeForm(id, null);
   else if (act === 'editJauge') jaugeForm(null, id);
-  else if (act === 'impCuve') impCuveForm(id);
 });
 document.addEventListener('input', function (e) {
   var n = e.target && e.target.name;
@@ -212,7 +211,7 @@ document.addEventListener('input', function (e) {
 });
 document.addEventListener('submit', function (e) {
   var f = e.target, p;
-  if (f.id === 'eform') p = saveEquip(f); else if (f.id === 'cform') p = saveCuve(f); else if (f.id === 'jform') p = saveJauge(f); else if (f.id === 'iform') p = saveImpCuve(f); else return;
+  if (f.id === 'eform') p = saveEquip(f); else if (f.id === 'cform') p = saveCuve(f); else if (f.id === 'jform') p = saveJauge(f); else return;
   e.preventDefault(); p.catch(function (err) { toast('Erreur : ' + (err && err.message ? err.message : err)); });
 });
 document.addEventListener('change', function (e) { // pas de kilométrage pour un équipement
@@ -374,39 +373,4 @@ function gaugeSection(v) {
   var rd = vehFills(v.id).filter(function (f) { return f.reading; }).reverse();
   if (rd.length) h += '<div class="card list">' + rd.map(function (f) { return '<div class="item"><div>' + fmtDate(f.date) + ' · relevé ' + f.ga + ' %' + (cap ? '<div class="muted">≈ ' + fmtL(gaugeL(f.ga, v)) + '</div>' : '') + '</div><button data-act="editJauge" data-id="' + esc(f.id) + '">Modifier</button></div>'; }).join('') + '</div>';
   return h;
-}
-
-/* ---------- Import d'une liste (papier) ---------- */
-function parseCuveList(text) {
-  var out = [], bad = [];
-  String(text || '').split(/\r?\n/).forEach(function (line, i) {
-    line = line.trim(); if (!line || /^(date|jour)\b/i.test(line)) return;
-    var c = line.split(/[;\t]/).map(function (x) { return x.trim(); });
-    var d = c[0].match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/), date = null;
-    if (d) date = (d[3].length === 2 ? '20' + d[3] : d[3]) + '-' + ('0' + d[2]).slice(-2) + '-' + ('0' + d[1]).slice(-2);
-    else if (/^\d{4}-\d{2}-\d{2}$/.test(c[0])) date = c[0];
-    var L = num(c[1]), P = num(c[2]), gb = num(c[3]), ga = num(c[4]);
-    if (!date || (L == null && ga == null)) { bad.push(i + 1); return; }
-    out.push({ date: date, liters: L || 0, ppl: P, gb: gb, ga: ga });
-  });
-  return { rows: out, bad: bad };
-}
-function impCuveForm(id) {
-  var v = data.vehicles.filter(function (x) { return x.id === id; })[0]; if (!v) return;
-  openSheet('<h1>Coller une liste · ' + esc(v.name) + '</h1><form id="iform" data-vid="' + esc(id) + '">' +
-    '<div class="muted">Une ligne par remplissage, colonnes séparées par « ; » (ou tabulation) : <b>date ; litres ; prix au litre ; jauge avant % ; jauge après %</b>. Les colonnes prix et jauges peuvent être vides. Dates : 25/10/2023 ou 2023-10-25. Une ligne avec seulement la date, une colonne litres vide et la jauge après est un simple relevé de jauge.</div>' +
-    '<label for="f_list">Liste</label><textarea id="f_list" name="list" rows="9" placeholder="25/10/2023 ; 1000 ; 1,02 ; 18 ; 85\n12/03/2024 ; ; ; ; 52"></textarea>' +
-    '<div class="formbar"><button type="button" data-act="closeSheet">Annuler</button><button class="primary" type="submit">Importer</button></div></form>');
-}
-async function saveImpCuve(form) {
-  var vid = form.getAttribute('data-vid'), r = parseCuveList(new FormData(form).get('list'));
-  if (!r.rows.length) { toast('Aucune ligne lisible'); return; }
-  var have = {}; vehFills(vid).forEach(function (f) { have[f.date + '|' + (f.liters || 0)] = 1; });
-  var add = r.rows.filter(function (x) { var k = x.date + '|' + x.liters; if (have[k]) return false; have[k] = 1; return true; });
-  if (!confirm(add.length + ' ligne(s) à importer' + (r.rows.length - add.length ? ', ' + (r.rows.length - add.length) + ' déjà présente(s) ignorée(s)' : '') + (r.bad.length ? ', ' + r.bad.length + ' illisible(s) (lignes ' + r.bad.join(', ') + ')' : '') + '. Continuer ?')) return;
-  for (var i = 0; i < add.length; i++) {
-    var x = add[i], reading = !(x.liters > 0), T = x.ppl != null && x.liters > 0 ? Math.round(x.liters * x.ppl * 100) / 100 : null;
-    await dbPut('fills', { id: uid(), vehicleId: vid, date: x.date, km: null, liters: x.liters, ppl: x.ppl, total: T, full: !reading, reading: reading, gb: reading ? null : x.gb, ga: x.ga, createdAt: Date.now(), updatedAt: Date.now() });
-  }
-  await reload(); closeSheet(); go('vehicle', vid); toast(add.length + ' ligne(s) importée(s)');
 }
