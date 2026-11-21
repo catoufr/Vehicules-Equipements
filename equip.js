@@ -14,6 +14,11 @@ function gaugeFrac(pct, v) {
   var th = 2 * Math.acos(1 - 2 * x); return (th - Math.sin(th)) / (2 * Math.PI);
 }
 function gaugeL(pct, v) { var c = capL(v); return (c != null && pct != null && isFinite(pct)) ? c * gaugeFrac(pct, v) : null; }
+function gaugePctOf(L, v) { // inverse : litres -> % de jauge
+  var c = capL(v); if (c == null || L == null) return null; var fr = Math.min(1, Math.max(0, L / c));
+  if (v.gaugeMode !== 'hauteur') return fr * 100;
+  var lo = 0, hi = 1; for (var i = 0; i < 40; i++) { var mid = (lo + hi) / 2; if (gaugeFrac(mid * 100, v) < fr) lo = mid; else hi = mid; } return (lo + hi) * 50;
+}
 function keptL(f) { return f.liters || 0; } // litres livrés
 function cuveFills(id) { return vehFills(id).filter(function (f) { return !f.reading; }); }
 function equipList(status) {
@@ -63,7 +68,12 @@ function cuveStats(id) {
 }
 function cuveItem(f) {
   var c = fillCost(f);
-  var g = (f.gb != null || f.ga != null) ? 'jauge ' + (f.gb != null ? f.gb + ' %' : '?') + ' → ' + (f.ga != null ? f.ga + ' %' : '?') : '';
+  var ev0 = data.vehicles.filter(function (x) { return x.id === f.vehicleId; })[0], dd = function (p) { return '≈ ' + Math.round(p) + ' % (déduit)'; }, gbT = f.gb != null ? f.gb + ' %' : '?', gaT = f.ga != null ? f.ga + ' %' : '?';
+  if (ev0 && capL(ev0) && f.liters > 0) { // l'autre valeur de jauge se déduit des litres livrés et de la capacité
+    if (f.gb == null && f.ga != null) { gbT = dd(gaugePctOf(gaugeL(f.ga, ev0) - f.liters, ev0)); }
+    else if (f.ga == null && f.gb != null) { gaT = dd(gaugePctOf(Math.min(capL(ev0), gaugeL(f.gb, ev0) + f.liters), ev0)); }
+  }
+  var g = (f.gb != null || f.ga != null) ? 'jauge ' + gbT + ' → ' + gaT : '';
   return '<div class="item"><div><b>' + fmtDate(f.date) + '</b> · ' + fmtL(f.liters) +
     '<div class="muted">' + [fmtPpl(f.ppl), c != null ? fmtEur(c) : '', g, f.station || ''].filter(function (x) { return x && x !== '–'; }).join(' · ') + '</div></div>' +
     '<div><button class="link" data-act="editCuve" data-id="' + esc(f.id) + '">Modifier</button></div></div>';
