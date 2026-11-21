@@ -275,7 +275,7 @@ function gaugeSegments(v) { // consommation entre deux niveaux connus
   });
   return segs;
 }
-var MW = [1.0, 0.9, 0.8, 0.5, 0.25, 0.1, 0.05, 0.05, 0.15, 0.45, 0.75, 1.0]; // poids de chauffe par mois (janv. → déc.) : répartit la consommation dans l'année
+var MW = [1.0, 0.9, 0.8, 0.5, 0.2, 0, 0, 0, 0.05, 0.5, 0.8, 1.0]; // poids de chauffe par mois (janv. → déc.) : aucune consommation l'été (juin à août)
 var WYEAR = MW.reduce(function (t, w) { return t + w * 365 / 12; }, 0);
 function alloc(d0, d1, used, est, out) { // répartit une consommation entre deux dates sur les saisons, selon le poids de chauffe des jours
   if (d1 <= d0) return;
@@ -286,15 +286,18 @@ function alloc(d0, d1, used, est, out) { // répartit une consommation entre deu
     o.used += used * per[k].w / tot; o.days += per[k].d; o.w += per[k].w; if (est) o.est += per[k].d;
   });
 }
+function wsum(d0, d1) { var t = 0; for (var c = d0; c < d1; c++) t += MW[+new Date(c * 86400000).toISOString().slice(5, 7) - 1]; return t; }
 function seasonModel(v) { // consommation par saison : jauge quand elle existe, sinon estimée avec les livraisons
   var seas = {}, segs = gaugeSegments(v), ok = segs.filter(function (x) { return !x.bad && x.used >= 0; }), nG = 0, nE = 0;
   ok.forEach(function (x) { alloc(dayNum(x.from), dayNum(x.to), x.used, false, seas); nG++; });
+  var kS = 0, kW = 0; ok.forEach(function (x) { kS += x.used; kW += wsum(dayNum(x.from), dayNum(x.to)); }); // consommation mesurée par unité de poids de chauffe
+  var k = kW > 0 && ok.reduce(function (t, x) { return t + x.days; }, 0) >= 180 ? kS / kW : null;
   var m = {}; cuveFills(v.id).forEach(function (f) { var o = m[f.date] || (m[f.date] = { date: f.date, liters: 0 }); o.liters += keptL(f); });
   var fs = Object.keys(m).sort().map(function (k) { return m[k]; });
   for (var i = 1; i < fs.length; i++) { // entre deux livraisons : on suppose que les litres livrés la première fois ont été consommés avant la suivante
     var a = fs[i - 1], b = fs[i], d0 = dayNum(a.date), d1 = dayNum(b.date), cov = 0;
     ok.forEach(function (x) { cov += Math.max(0, Math.min(d1, dayNum(x.to)) - Math.max(d0, dayNum(x.from))); });
-    if (d1 > d0 && cov <= (d1 - d0) / 2) { alloc(d0, d1, a.liters, true, seas); nE++; }
+    if (d1 > d0 && cov <= (d1 - d0) / 2) { alloc(d0, d1, k != null ? k * wsum(d0, d1) : a.liters, true, seas); nE++; }
   }
   var rows = Object.keys(seas).sort().map(function (k) { var o = seas[k], cv = o.w / WYEAR; return { label: k, used: o.used, days: o.days, cover: cv, est: o.est > o.days / 2, lan: cv >= 0.2 ? o.used / cv : null, partial: cv < 0.9 }; });
   var used = rows.reduce(function (t, r) { return t + r.used; }, 0), days = rows.reduce(function (t, r) { return t + r.days; }, 0), cvt = rows.reduce(function (t, r) { return t + r.cover; }, 0);
@@ -353,7 +356,7 @@ function gaugeSection(v) {
   h += '<div class="card"><div class="muted">Par saison de chauffe (juin → mai)</div>' + seasonChart(rows) + '</div>';
   h += '<div class="card">' + kv([['Source du calcul', M.src], ['Consommation sur la période', fmtL(M.used) + ' sur ' + M.days + ' jours'], ['Équivalent par an', M.lanTotal != null ? fmtL(M.lanTotal) : '—']]) +
     (M.trend ? '<div class="trend">Tendance : ' + (Math.abs(M.trend.pct) < 0.02 ? 'consommation stable' : 'consommation en ' + (M.trend.pct < 0 ? 'baisse' : 'hausse') + ' d\'environ ' + Math.abs(Math.round(M.trend.pct * 100)) + ' % par an') + ' <span class="muted">(' + M.trend.n + ' saisons, de ' + esc(M.trend.first) + ' à ' + esc(M.trend.last) + ')</span></div>' : '') +
-    (M.nE ? '<div class="muted">« ~ » = estimé à partir des livraisons seules : on suppose que les litres livrés sont consommés avant la livraison suivante, et la consommation est répartie selon la saison (hiver &gt; été). Un remplissage partiel ou un stock restant décale un peu une saison vers sa voisine, mais l\'erreur s\'annule sur plusieurs années : fiez-vous à la tendance plus qu\'à une saison isolée. Les relevés de jauge rendent le calcul plus précis.</div>' : '') +
+    (M.nE ? '<div class="muted">« ~ » = estimé à partir des livraisons seules : sans relevé de jauge, on applique la consommation moyenne mesurée ailleurs (ou, s\'il n\'y a aucune mesure, les litres livrés), répartie selon la saison : rien l\'été, le plus en hiver. Fiez-vous à la tendance plus qu\'à une saison isolée ; un relevé de jauge rend le calcul précis.</div>' : '') +
     '</div>';
   h += '<h3>Détail par saison</h3><div class="card list">' + rows.slice().reverse().map(function (x, i, arr) {
     var prev = arr.slice(i + 1).filter(function (r) { return r.lan != null; })[0], trend = prev && x.lan != null && x.cover >= 0.6 && prev.cover >= 0.6 ? x.lan / prev.lan - 1 : null;
